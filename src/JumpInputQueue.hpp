@@ -46,6 +46,14 @@
 #define HONK_FREE_CAMERA_X_OFFSET 1472
 #define HONK_FREE_CAMERA_Y_OFFSET 1476
 #define HONK_FREE_CAMERA_Z_OFFSET 1480
+#define HONK_RENDERER_COLOR_TABLE_OFFSET 1488
+#define HONK_RENDERER_COLOR_ENTRY_SIZE 32
+#define HONK_RENDERER_COLOR_ENTRY_COUNT 32
+#define HONK_GOOSE_COLOR_R_OFFSET 2512
+#define HONK_GOOSE_COLOR_G_OFFSET 2516
+#define HONK_GOOSE_COLOR_B_OFFSET 2520
+#define HONK_GOOSE_COLOR_A_OFFSET 2524
+#define HONK_RENDERER_COLOR_COUNT_OFFSET 2528
 
 #ifndef __ASSEMBLER__
 #include <math.h>
@@ -60,6 +68,12 @@ typedef struct HonkNpcScaleEntry {
     float screenX, screenY, screenZ;
     uint32_t visible;
 } HonkNpcScaleEntry;
+
+typedef struct HonkRendererColorEntry {
+    uintptr_t renderer;
+    uintptr_t material;
+    float r, g, b, a;
+} HonkRendererColorEntry;
 
 typedef struct GooseJumpData {
     volatile uint64_t pendingState; // upper word: touch timestamp bits; lower word: event count
@@ -105,6 +119,12 @@ typedef struct GooseJumpData {
     volatile uint32_t freeCameraXBits;
     volatile uint32_t freeCameraYBits;
     volatile uint32_t freeCameraZBits;
+    HonkRendererColorEntry gooseColorEntries[HONK_RENDERER_COLOR_ENTRY_COUNT];
+    volatile uint32_t gooseColorRBits;
+    volatile uint32_t gooseColorGBits;
+    volatile uint32_t gooseColorBBits;
+    volatile uint32_t gooseColorABits;
+    volatile uint32_t gooseColorEntryCount;
 } GooseJumpData;
 
 static_assert(offsetof(GooseJumpData, pendingState) == GOOSE_JUMP_PENDING_OFFSET);
@@ -151,6 +171,13 @@ static_assert(offsetof(GooseJumpData, cameraPositionValid) == HONK_CAMERA_POSITI
 static_assert(offsetof(GooseJumpData, freeCameraXBits) == HONK_FREE_CAMERA_X_OFFSET);
 static_assert(offsetof(GooseJumpData, freeCameraYBits) == HONK_FREE_CAMERA_Y_OFFSET);
 static_assert(offsetof(GooseJumpData, freeCameraZBits) == HONK_FREE_CAMERA_Z_OFFSET);
+static_assert(offsetof(GooseJumpData, gooseColorEntries) == HONK_RENDERER_COLOR_TABLE_OFFSET);
+static_assert(sizeof(HonkRendererColorEntry) == HONK_RENDERER_COLOR_ENTRY_SIZE);
+static_assert(offsetof(GooseJumpData, gooseColorRBits) == HONK_GOOSE_COLOR_R_OFFSET);
+static_assert(offsetof(GooseJumpData, gooseColorGBits) == HONK_GOOSE_COLOR_G_OFFSET);
+static_assert(offsetof(GooseJumpData, gooseColorBBits) == HONK_GOOSE_COLOR_B_OFFSET);
+static_assert(offsetof(GooseJumpData, gooseColorABits) == HONK_GOOSE_COLOR_A_OFFSET);
+static_assert(offsetof(GooseJumpData, gooseColorEntryCount) == HONK_RENDERER_COLOR_COUNT_OFFSET);
 
 namespace GooseJumpInput {
 
@@ -234,6 +261,7 @@ static constexpr uint32_t kDisableNpcShoo = 1u << 2;
 static constexpr uint32_t kNpcTracking = 1u << 3;
 static constexpr uint32_t kFreeCamera = 1u << 4;
 static constexpr uint32_t kFirstPersonCamera = 1u << 5;
+static constexpr uint32_t kGooseColor = 1u << 6;
 static constexpr float kMinimumSpeedFactor = 0.5f;
 static constexpr float kMaximumSpeedFactor = 3.0f;
 static constexpr float kMinimumJumpImpulse = 0.5f;

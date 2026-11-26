@@ -34,7 +34,7 @@ class HonkMenuPortTests(unittest.TestCase):
             self.assertIn(control, MENU)
         self.assertIn("Unavailable in this build", MENU)
         self.assertIn("Collision stays enabled; this is not noclip", MENU)
-        self.assertIn("Scene collider pairs are not yet enumerated safely", MENU)
+        self.assertIn("ignore-pair state getter", MENU)
         self.assertIn("NPC size (active people)", MENU)
         self.assertIn("Camera position: waiting for gameplay", MENU)
         self.assertIn("Teleport goose to current camera", MENU)
@@ -46,11 +46,16 @@ class HonkMenuPortTests(unittest.TestCase):
         self.assertIn("kCommandTeleportToCamera", MENU)
         self.assertIn("goose_camera_free_hook", HELPER)
         self.assertIn("Goose.cameraTransform", HELPER)
+        self.assertIn("Goose.head", HELPER)
+        self.assertIn("clear free-camera and first-person modes", HELPER)
+        self.assertIn("goose_color_update", HELPER)
+        self.assertIn("Material.GetColor(string)", HELPER)
+        self.assertIn("Material.set_color", HELPER)
         self.assertIn("Transform.set_position", HELPER)
         self.assertIn("goose_reloc_camera_firstperson_get_forward", HELPER)
         self.assertIn("goose_reloc_camera_firstperson_get_rotation", HELPER)
         self.assertIn("setFirstPersonCameraEnabled", MENU)
-        for supported in ("Float / hold height", "Custom game speed", "Goose size",
+        for supported in ("Float / hold height", "Custom game speed", "Goose size", "Goose color",
                           "NPC size (active people)", "NPC tracking markers",
                           "Follow camera distance", "Disable NPC shoo"):
             self.assertIn(supported, MENU)
@@ -155,6 +160,7 @@ class HonkMenuPortTests(unittest.TestCase):
             "camera-position-readout", "free-camera-world-axis-move", "first-person-camera",
             "teleport-to-current-camera",
             "destroy-last-primitive", "experimental-out-of-bounds-teleport",
+            "goose-color-hue",
         }
         self.assertTrue(expected.issubset(set(build_components.HONK_MENU_ACTIONS)))
 

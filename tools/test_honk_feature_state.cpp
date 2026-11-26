@@ -4,13 +4,26 @@
 #include <cstdint>
 
 int main() {
-    static_assert(sizeof(GooseJumpData) == 1488);
+    static_assert(sizeof(GooseJumpData) == 2536);
     GooseJumpData state{};
     assert(!HonkFeatures::jumpEnabled(&state));
     HonkFeatures::setJumpEnabled(&state, true);
     assert(HonkFeatures::jumpEnabled(&state));
     HonkFeatures::setJumpEnabled(&state, false);
     assert(!HonkFeatures::jumpEnabled(&state));
+    HonkFeatures::setGooseColor(&state, 0.25f, 0.5f, 0.75f, 1.0f);
+    assert(GooseJumpInput::bitsFloat(__atomic_load_n(&state.gooseColorRBits, __ATOMIC_ACQUIRE)) == 0.25f);
+    assert(GooseJumpInput::bitsFloat(__atomic_load_n(&state.gooseColorGBits, __ATOMIC_ACQUIRE)) == 0.5f);
+    assert(GooseJumpInput::bitsFloat(__atomic_load_n(&state.gooseColorBBits, __ATOMIC_ACQUIRE)) == 0.75f);
+    HonkFeatures::setGooseColor(&state, NAN, -3.0f, 3.0f, 0.4f);
+    assert(GooseJumpInput::bitsFloat(__atomic_load_n(&state.gooseColorRBits, __ATOMIC_ACQUIRE)) == 1.0f);
+    assert(GooseJumpInput::bitsFloat(__atomic_load_n(&state.gooseColorGBits, __ATOMIC_ACQUIRE)) == 0.0f);
+    assert(GooseJumpInput::bitsFloat(__atomic_load_n(&state.gooseColorBBits, __ATOMIC_ACQUIRE)) == 1.0f);
+    assert(!HonkFeatures::gooseColorEnabled(&state));
+    HonkFeatures::setGooseColorEnabled(&state, true);
+    assert(HonkFeatures::gooseColorEnabled(&state));
+    HonkFeatures::setGooseColorEnabled(&state, false);
+    assert(!HonkFeatures::gooseColorEnabled(&state));
 
     assert(!HonkFeatures::hoverEnabled(&state));
     HonkFeatures::setHoverEnabled(&state, true);

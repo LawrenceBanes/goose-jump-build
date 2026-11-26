@@ -43,13 +43,14 @@ goose_reloc_data_add:
     stlr    wzr, [x10]
     add     x10, x22, #HONK_FLAGS_OFFSET
     ldar    w11, [x10]
-    bic     w11, w11, #16
+    bic     w11, w11, #48           // clear free-camera and first-person modes
     stlr    w11, [x10]
     str     xzr, [x22, #HONK_SPAWNED_OBJECT_OFFSET]
     str     wzr, [x22, #HONK_SCALE_CAPTURED_OFFSET]
     str     xzr, [x22, #HONK_SCALE_GOOSE_OFFSET]
     str     wzr, [x22, #HONK_CAMERA_CAPTURED_OFFSET]
     str     xzr, [x22, #HONK_CAMERA_HELPER_OFFSET]
+    str     wzr, [x22, #HONK_RENDERER_COLOR_COUNT_OFFSET]
     add     x10, x22, #HONK_CAMERA_POSITION_VALID_OFFSET
     stlr    wzr, [x10]
     add     x9, x22, #HONK_NPC_SCALE_TABLE_OFFSET
@@ -856,6 +857,9 @@ goose_reloc_camera_get_position:
     add     x9, x22, #HONK_CAMERA_POSITION_VALID_OFFSET
     stlr    wzr, [x9]
 .Ldone_return:
+    mov     x0, x20
+    mov     x1, x22
+    bl      goose_color_update
     ldr     x22, [sp, #32]
     ldr     x30, [sp, #40]
     add     sp, sp, #48
@@ -1246,3 +1250,157 @@ goose_reloc_camera_hook_displaced:
 goose_reloc_camera_original_continue:
     .inst   0x14000000              // B GooseCameraHelper.LateUpdate+4
 .size goose_camera_free_hook, .-goose_camera_free_hook
+
+// Goose material tinting uses the verified Renderer and Material API entries.
+// The generic Renderer enumeration's exact MethodInfo pointer slot and the
+// runtime _Color string literal slot are supplied by the original IL2CPP image.
+.p2align 2
+.global goose_color_update
+.type goose_color_update, %function
+goose_color_update:
+    cbz     x0, .Lcolor_return
+    sub     sp, sp, #96
+    stp     x19, x20, [sp, #0]
+    stp     x21, x22, [sp, #16]
+    stp     x23, x24, [sp, #32]
+    stp     x25, x26, [sp, #48]
+    str     x30, [sp, #64]
+    mov     x19, x0                  // Goose component
+    mov     x20, x1                  // shared state
+    add     x10, x20, #HONK_FLAGS_OFFSET
+    ldar    w21, [x10]
+    tbnz    w21, #6, .Lcolor_enabled
+    ldr     w22, [x20, #HONK_RENDERER_COLOR_COUNT_OFFSET]
+    mov     w10, #HONK_RENDERER_COLOR_ENTRY_COUNT
+    cmp     w22, w10
+    csel    w22, w22, w10, ls
+    cbz     w22, .Lcolor_finish
+    mov     w23, wzr
+.Lcolor_restore_loop:
+    cmp     w23, w22
+    b.hs    .Lcolor_clear_count
+    add     x24, x20, #HONK_RENDERER_COLOR_TABLE_OFFSET
+    mov     x25, #HONK_RENDERER_COLOR_ENTRY_SIZE
+    madd    x24, x23, x25, x24
+    ldr     x0, [x24, #8]
+    cbz     x0, .Lcolor_restore_next
+    ldr     s0, [x24, #16]
+    ldr     s1, [x24, #20]
+    ldr     s2, [x24, #24]
+    ldr     s3, [x24, #28]
+    mov     x1, xzr
+goose_reloc_color_material_restore:
+    .inst   0x94000000              // BL Material.set_color
+.Lcolor_restore_next:
+    add     w23, w23, #1
+    b       .Lcolor_restore_loop
+.Lcolor_clear_count:
+    str     wzr, [x20, #HONK_RENDERER_COLOR_COUNT_OFFSET]
+    b       .Lcolor_finish
+
+.Lcolor_enabled:
+    ldr     w22, [x20, #HONK_RENDERER_COLOR_COUNT_OFFSET]
+    cbnz    w22, .Lcolor_apply
+    // Capture original color from every renderer's first material. Clamp the
+    // table to 32 renderers; iteration stays entirely on Unity's game thread.
+    mov     x0, x19
+    mov     w1, wzr
+goose_reloc_color_get_renderers_method_adrp:
+    .inst   0x9000000A              // ADRP x10, Component.GetComponentsInChildren<Renderer>(bool) MethodInfo slot
+goose_reloc_color_get_renderers_method_add:
+    .inst   0x9100014A              // ADD x10, x10, #lo12(method slot)
+    ldr     x2, [x10]
+goose_reloc_color_get_renderers:
+    .inst   0x94000000              // BL Component.GetComponentsInChildren<Renderer>(bool)
+    cbz     x0, .Lcolor_finish
+    mov     x24, x0                  // Il2CppArray<Renderer>
+    ldr     x25, [x24, #0x18]       // Il2CppArray.max_length
+    mov     x10, #HONK_RENDERER_COLOR_ENTRY_COUNT
+    cmp     x25, x10
+    csel    x25, x25, x10, lo
+    add     x26, x24, #0x20         // Il2CppArray vector
+    mov     x23, xzr
+.Lcolor_capture_loop:
+    cmp     x23, x25
+    b.hs    .Lcolor_apply
+    ldr     x0, [x26, x23, lsl #3]
+    cbz     x0, .Lcolor_capture_next
+    str     x0, [sp, #72]
+    mov     x1, xzr
+goose_reloc_color_get_material:
+    .inst   0x94000000              // BL Renderer.get_material
+    cbz     x0, .Lcolor_capture_next
+    str     x0, [sp, #80]
+goose_reloc_color_string_adrp:
+    .inst   0x9000000A              // ADRP x10, _Color string literal slot
+goose_reloc_color_string_add:
+    .inst   0x9100014A              // ADD x10, x10, #lo12(_Color string slot)
+    ldr     x1, [x10]
+    cbz     x1, .Lcolor_capture_next
+    mov     x2, xzr
+goose_reloc_color_get_color:
+    .inst   0x94000000              // BL Material.GetColor(string)
+    ldr     w12, [x20, #HONK_RENDERER_COLOR_COUNT_OFFSET]
+    cmp     w12, #HONK_RENDERER_COLOR_ENTRY_COUNT
+    b.hs    .Lcolor_apply
+    add     x13, x20, #HONK_RENDERER_COLOR_TABLE_OFFSET
+    mov     x14, #HONK_RENDERER_COLOR_ENTRY_SIZE
+    madd    x13, x12, x14, x13
+    ldr     x14, [sp, #72]
+    str     x14, [x13]
+    ldr     x14, [sp, #80]
+    str     x14, [x13, #8]
+    str     s0, [x13, #16]
+    str     s1, [x13, #20]
+    str     s2, [x13, #24]
+    str     s3, [x13, #28]
+    add     w12, w12, #1
+    add     x14, x20, #HONK_RENDERER_COLOR_COUNT_OFFSET
+    stlr    w12, [x14]
+.Lcolor_capture_next:
+    add     x23, x23, #1
+    b       .Lcolor_capture_loop
+
+.Lcolor_apply:
+    ldr     w22, [x20, #HONK_RENDERER_COLOR_COUNT_OFFSET]
+    mov     w10, #HONK_RENDERER_COLOR_ENTRY_COUNT
+    cmp     w22, w10
+    csel    w22, w22, w10, ls
+    mov     w23, wzr
+.Lcolor_apply_loop:
+    cmp     w23, w22
+    b.hs    .Lcolor_finish
+    add     x24, x20, #HONK_RENDERER_COLOR_TABLE_OFFSET
+    mov     x25, #HONK_RENDERER_COLOR_ENTRY_SIZE
+    madd    x24, x23, x25, x24
+    ldr     x0, [x24, #8]
+    cbz     x0, .Lcolor_apply_next
+    add     x10, x20, #HONK_GOOSE_COLOR_R_OFFSET
+    ldar    w10, [x10]
+    fmov    s0, w10
+    add     x10, x20, #HONK_GOOSE_COLOR_G_OFFSET
+    ldar    w10, [x10]
+    fmov    s1, w10
+    add     x10, x20, #HONK_GOOSE_COLOR_B_OFFSET
+    ldar    w10, [x10]
+    fmov    s2, w10
+    add     x10, x20, #HONK_GOOSE_COLOR_A_OFFSET
+    ldar    w10, [x10]
+    fmov    s3, w10
+    mov     x1, xzr
+goose_reloc_color_material_apply:
+    .inst   0x94000000              // BL Material.set_color
+.Lcolor_apply_next:
+    add     w23, w23, #1
+    b       .Lcolor_apply_loop
+
+.Lcolor_finish:
+    ldp     x19, x20, [sp, #0]
+    ldp     x21, x22, [sp, #16]
+    ldp     x23, x24, [sp, #32]
+    ldp     x25, x26, [sp, #48]
+    ldr     x30, [sp, #64]
+    add     sp, sp, #96
+.Lcolor_return:
+    ret
+.size goose_color_update, .-goose_color_update

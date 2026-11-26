@@ -41,6 +41,31 @@ inline void setFirstPersonCameraEnabled(GooseJumpData *state, bool enabled) {
                                            true, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
 }
 
+inline bool gooseColorEnabled(const GooseJumpData *state) {
+    return (flags(state) & kGooseColor) != 0;
+}
+
+inline void setGooseColorEnabled(GooseJumpData *state, bool enabled) {
+    if (!state) return;
+    uint32_t observed = __atomic_load_n(&state->featureFlags, __ATOMIC_ACQUIRE);
+    uint32_t desired;
+    do {
+        desired = enabled ? (observed | kGooseColor) : (observed & ~kGooseColor);
+    } while (!__atomic_compare_exchange_n(&state->featureFlags, &observed, desired,
+                                           true, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
+}
+
+inline void setGooseColor(GooseJumpData *state, float r, float g, float b, float a = 1.0f) {
+    if (!state) return;
+    const float values[] = {r, g, b, a};
+    volatile uint32_t *dest[] = {&state->gooseColorRBits, &state->gooseColorGBits,
+                                 &state->gooseColorBBits, &state->gooseColorABits};
+    for (unsigned i = 0; i < 4; ++i) {
+        float value = isfinite(values[i]) ? fminf(fmaxf(values[i], 0.0f), 1.0f) : 1.0f;
+        __atomic_store_n(dest[i], GooseJumpInput::floatBits(value), __ATOMIC_RELEASE);
+    }
+}
+
 inline bool setFreeCameraEnabled(GooseJumpData *state, bool enabled) {
     if (!state) return false;
     if (enabled) {

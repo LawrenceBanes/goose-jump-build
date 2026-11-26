@@ -50,7 +50,9 @@ static UILabel *gHonkCameraPositionLabel;
 static UILabel *gHonkCameraStepValue;
 static UISwitch *gHonkFreeCameraSwitch;
 static UISwitch *gHonkFirstPersonSwitch;
+static UISwitch *gHonkGooseColorSwitch;
 static float gHonkFreeCameraStep = 0.5f;
+static float gHonkGooseColorHue = 0.0f;
 static UILabel *gHonkNpcSizeValue;
 static UIView *gHonkNpcOverlay;
 static NSTimer *gHonkRefresh;
@@ -129,6 +131,15 @@ static void HonkResolveGuest(void) {
             cmd = (const struct load_command *)((const uint8_t *)cmd + cmd->cmdsize);
         }
     }
+}
+
+static void HonkPublishGooseColorHue(float hue) {
+    if (!gHonkState) return;
+    gHonkGooseColorHue = std::isfinite(hue) ? fminf(fmaxf(hue, 0.0f), 1.0f) : 0.0f;
+    CGFloat r = 1.0, g = 1.0, b = 1.0, a = 1.0;
+    [[UIColor colorWithHue:gHonkGooseColorHue saturation:0.9 brightness:1.0 alpha:1.0]
+        getRed:&r green:&g blue:&b alpha:&a];
+    HonkFeatures::setGooseColor(gHonkState, (float)r, (float)g, (float)b, (float)a);
 }
 
 static UIWindow *HonkGameWindow(void) {
@@ -295,8 +306,7 @@ static void HonkBuildMovementPage(void) {
     HonkAddRow(gHonkContent, HonkLabel(@"Camera", UIFontWeightBold, 17, UIColor.systemTealColor));
     HonkSlider(gHonkContent, @"Follow camera distance", HonkFeatures::kMinimumCameraFactor,
                HonkFeatures::kMaximumCameraFactor, HonkFeatures::cameraFactor(gHonkState), 8);
-    HonkAddUnavailable(@"Noclip", @"Scene collider pairs are not yet enumerated safely; world collision remains enabled");
-    HonkAddUnavailable(@"Noclip", @"this build exposes no verified reversible Collider setter; world collision remains enabled");
+    HonkAddUnavailable(@"Noclip", @"This Unity build has no Collider enable setter or ignore-pair state getter; collision state cannot be restored safely");
 }
 
 static void HonkBuildTeleportPage(void) {
@@ -316,7 +326,7 @@ static void HonkBuildPage(NSInteger page) {
     switch (page) {
         case 0: HonkBuildMovementPage(); break;
         case 1: HonkBuildTeleportPage(); break;
-        case 2:
+        case 2: {
             gHonkCameraPositionLabel = HonkLabel(@"Camera position: waiting for gameplay", UIFontWeightRegular, 12, UIColor.lightTextColor);
             HonkAddRow(gHonkContent, gHonkCameraPositionLabel);
             gHonkFreeCameraSwitch = [[UISwitch alloc] init];
@@ -380,7 +390,8 @@ static void HonkBuildPage(NSInteger page) {
             HonkAddRow(gHonkContent, HonkLabel(@"Uses the live follow-camera position. Save your location first if testing near obstacles.", UIFontWeightRegular, 12, UIColor.lightTextColor));
             HonkAddRow(gHonkContent, HonkLabel(@"Follow camera distance is available under Move → Camera.", UIFontWeightRegular, 12, UIColor.lightTextColor));
             break;
-        case 3:
+        }
+        case 3: {
             {
             UISwitch *disableShoo = [[UISwitch alloc] init];
             disableShoo.tag = 9;
@@ -418,7 +429,24 @@ static void HonkBuildPage(NSInteger page) {
                 HonkAddRow(gHonkContent, trackingRow);
                 HonkAddRow(gHonkContent, HonkLabel(@"Projects active Body components through Camera.main.WorldToScreenPoint. Labels are generic because managed object names are not resolved.", UIFontWeightRegular, 12, UIColor.lightTextColor));
             }
+            gHonkGooseColorSwitch = [[UISwitch alloc] init];
+            gHonkGooseColorSwitch.tag = 17;
+            gHonkGooseColorSwitch.on = HonkFeatures::gooseColorEnabled(gHonkState);
+            gHonkGooseColorSwitch.multipleTouchEnabled = YES;
+            gHonkGooseColorSwitch.exclusiveTouch = NO;
+            [gHonkGooseColorSwitch addTarget:[NSClassFromString(@"HonkMenuOverlay") class]
+                                       action:@selector(settingChanged:) forControlEvents:UIControlEventValueChanged];
+            UIStackView *colorRow = [[UIStackView alloc] init];
+            colorRow.axis = UILayoutConstraintAxisHorizontal;
+            colorRow.alignment = UIStackViewAlignmentCenter;
+            colorRow.distribution = UIStackViewDistributionEqualSpacing;
+            [colorRow addArrangedSubview:HonkLabel(@"Goose color", UIFontWeightSemibold, 15, UIColor.whiteColor)];
+            [colorRow addArrangedSubview:gHonkGooseColorSwitch];
+            HonkAddRow(gHonkContent, colorRow);
+            HonkSlider(gHonkContent, @"Goose color hue", 0.0f, 1.0f, gHonkGooseColorHue, 18);
+            HonkAddRow(gHonkContent, HonkLabel(@"Tints up to 32 goose child renderer materials. The original material colors are captured and restored when disabled; scene changes recapture the new goose.", UIFontWeightRegular, 12, UIColor.lightTextColor));
             break;
+        }
         case 4:
             HonkAddUnavailable(@"Item teleport / spawning", @"scene object identity and ownership are not mapped");
             HonkAddUnavailable(@"Task completion", @"progression state has not been mapped; unsafe to modify");
@@ -485,6 +513,8 @@ static void HonkBuildPage(NSInteger page) {
     NSNumber *npcSizePreference = [defaults objectForKey:@"HonkMenu.NpcSizeFactor"];
     NSNumber *npcTrackingPreference = [defaults objectForKey:@"HonkMenu.NpcTracking"];
     NSNumber *shooPreference = [defaults objectForKey:@"HonkMenu.DisableNpcShoo"];
+    NSNumber *gooseColorHuePreference = [defaults objectForKey:@"HonkMenu.GooseColorHue"];
+    NSNumber *gooseColorPreference = [defaults objectForKey:@"HonkMenu.GooseColorEnabled"];
     HonkFeatures::setJumpEnabled(gHonkState, jumpPreference ? jumpPreference.boolValue : true);
     HonkFeatures::setJumpImpulse(gHonkState, impulsePreference ? impulsePreference.floatValue : HonkReadJumpImpulse());
     HonkFeatures::setSpeedFactor(gHonkState, speedPreference ? speedPreference.floatValue : 1.0f);
@@ -496,6 +526,8 @@ static void HonkBuildPage(NSInteger page) {
     HonkFeatures::setNpcSizeFactor(gHonkState, npcSizePreference ? npcSizePreference.floatValue : 1.0f);
     HonkFeatures::setNpcTrackingEnabled(gHonkState, npcTrackingPreference ? npcTrackingPreference.boolValue : false);
     HonkFeatures::setDisableNpcShoo(gHonkState, shooPreference ? shooPreference.boolValue : false);
+    HonkPublishGooseColorHue(gooseColorHuePreference ? gooseColorHuePreference.floatValue : 0.0f);
+    HonkFeatures::setGooseColorEnabled(gHonkState, gooseColorPreference ? gooseColorPreference.boolValue : false);
 
     if (gHonkRoot && gHonkRoot.superview == root) {
         [self refresh];
@@ -655,6 +687,8 @@ static void HonkBuildPage(NSInteger page) {
         [gHonkFreeCameraSwitch setOn:HonkFeatures::freeCameraEnabled(gHonkState) animated:NO];
     if (gHonkFirstPersonSwitch && gHonkState)
         [gHonkFirstPersonSwitch setOn:HonkFeatures::firstPersonCameraEnabled(gHonkState) animated:NO];
+    if (gHonkGooseColorSwitch && gHonkState)
+        [gHonkGooseColorSwitch setOn:HonkFeatures::gooseColorEnabled(gHonkState) animated:NO];
     [gHonkNpcOverlay setNeedsDisplay];
 }
 
@@ -702,6 +736,10 @@ static void HonkBuildPage(NSInteger page) {
                 HonkFeatures::setFirstPersonCameraEnabled(gHonkState, enabled);
                 if (enabled) [gHonkFreeCameraSwitch setOn:NO animated:NO];
                 break;
+            case 17:
+                HonkFeatures::setGooseColorEnabled(gHonkState, enabled);
+                [NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"HonkMenu.GooseColorEnabled"];
+                break;
         }
     } else if ([sender isKindOfClass:UISlider.class]) {
         UISlider *slider = (UISlider *)sender;
@@ -733,6 +771,9 @@ static void HonkBuildPage(NSInteger page) {
             gHonkFreeCameraStep = fminf(fmaxf(slider.value, 0.1f), 2.0f);
             gHonkCameraStepValue.text = [NSString stringWithFormat:@"%.1f units", gHonkFreeCameraStep];
             [NSUserDefaults.standardUserDefaults setFloat:gHonkFreeCameraStep forKey:@"HonkMenu.FreeCameraStep"];
+        } else if (slider.tag == 18) {
+            HonkPublishGooseColorHue(slider.value);
+            [NSUserDefaults.standardUserDefaults setFloat:gHonkGooseColorHue forKey:@"HonkMenu.GooseColorHue"];
         }
     }
 }
@@ -793,6 +834,9 @@ static void HonkBuildPage(NSInteger page) {
         __atomic_store_n(&gHonkState->command, HonkFeatures::kCommandNone, __ATOMIC_RELEASE);
         (void)HonkFeatures::setFreeCameraEnabled(gHonkState, false);
         HonkFeatures::setFirstPersonCameraEnabled(gHonkState, false);
+        HonkFeatures::setGooseColorEnabled(gHonkState, false);
+        [NSUserDefaults.standardUserDefaults setBool:NO forKey:@"HonkMenu.GooseColorEnabled"];
+        [gHonkGooseColorSwitch setOn:NO animated:NO];
     }
 }
 

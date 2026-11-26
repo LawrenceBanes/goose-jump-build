@@ -131,12 +131,21 @@ class PatcherTests(unittest.TestCase):
             build.BASE + 0x1DEB4BC,  # Transform.get_forward for first-person camera
             build.BASE + 0x1DEB098,  # Transform.get_rotation
             build.BASE + 0x1DEB698,  # Transform.set_rotation
+            build.BASE + 0x1DE17E0,  # SceneManager.GetActiveScene
+            build.BASE + 0x47068,  # Scene.GetRootGameObjects
+            build.BASE + 0x1E11720,  # Collider.get_enabled only
+            build.BASE + 0x1DB5330,  # Behaviour.set_enabled, not a Collider setter
+            build.BASE + 0x1E12F78,  # Physics.IgnoreCollision with explicit bool
             build.BASE + 0x1DB8128,  # Camera.get_main
             build.BASE + 0x1DB7A64,  # Camera.WorldToScreenPoint(Vector3)
             build.BASE + 0x1DE2A24,  # Screen.get_width
             build.BASE + 0x1DE2A84,  # Screen.get_height
             build.BASE + 0x2137CF8,  # Component.GetComponentsInChildren<Collider>(bool), shared generic body
             build.BASE + 0x1E12F78,  # Physics.IgnoreCollision(Collider, Collider, bool)
+            build.BASE + 0x2137CF8,  # Component.GetComponentsInChildren<Renderer>(bool)
+            build.BASE + 0x1DDE6A4,  # Renderer.get_material
+            build.BASE + 0x1DC9670,  # Material.GetColor(string)
+            build.BASE + 0x1DC8640,  # Material.set_color
             build.BASE + 0x1E11720,  # Collider.get_enabled (getter only)
             build.BASE + 0x1DC3A6C,  # GameObject.Find(string)
             build.BASE + 0x1146688,  # SwitchEventManager.TriggerEvent(string)

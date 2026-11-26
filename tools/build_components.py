@@ -21,6 +21,7 @@ HONK_MENU_ACTIONS = [
     "camera-position-readout",
     "free-camera-world-axis-move", "teleport-to-current-camera",
     "first-person-camera",
+    "goose-color-hue",
     "restore-position", "teleport-to-current-camera", "area-teleport", "practice-teleport",
     "experimental-out-of-bounds-teleport", "spawn-and-replace-unity-primitive",
     "destroy-last-primitive",
