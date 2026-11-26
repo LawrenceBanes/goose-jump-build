@@ -20,6 +20,7 @@ HONK_MENU_ACTIONS = [
     "npc-size-all-active-bodies", "npc-world-screen-markers", "save-position",
     "camera-position-readout",
     "free-camera-world-axis-move", "teleport-to-current-camera",
+    "first-person-camera",
     "restore-position", "teleport-to-current-camera", "area-teleport", "practice-teleport",
     "experimental-out-of-bounds-teleport", "spawn-and-replace-unity-primitive",
     "destroy-last-primitive",

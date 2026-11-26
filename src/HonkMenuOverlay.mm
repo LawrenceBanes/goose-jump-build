@@ -49,6 +49,7 @@ static UILabel *gHonkCameraValue;
 static UILabel *gHonkCameraPositionLabel;
 static UILabel *gHonkCameraStepValue;
 static UISwitch *gHonkFreeCameraSwitch;
+static UISwitch *gHonkFirstPersonSwitch;
 static float gHonkFreeCameraStep = 0.5f;
 static UILabel *gHonkNpcSizeValue;
 static UIView *gHonkNpcOverlay;
@@ -333,6 +334,21 @@ static void HonkBuildPage(NSInteger page) {
             [freeCameraRow addArrangedSubview:gHonkFreeCameraSwitch];
             HonkAddRow(gHonkContent, freeCameraRow);
             HonkAddRow(gHonkContent, HonkLabel(@"Freezes the follow rig and moves the existing game camera in 0.5-unit world-axis steps. Camera rotation stays fixed.", UIFontWeightRegular, 12, UIColor.lightTextColor));
+            gHonkFirstPersonSwitch = [[UISwitch alloc] init];
+            gHonkFirstPersonSwitch.tag = 16;
+            gHonkFirstPersonSwitch.on = HonkFeatures::firstPersonCameraEnabled(gHonkState);
+            gHonkFirstPersonSwitch.multipleTouchEnabled = YES;
+            gHonkFirstPersonSwitch.exclusiveTouch = NO;
+            [gHonkFirstPersonSwitch addTarget:[NSClassFromString(@"HonkMenuOverlay") class]
+                                       action:@selector(settingChanged:) forControlEvents:UIControlEventValueChanged];
+            UIStackView *firstPersonRow = [[UIStackView alloc] init];
+            firstPersonRow.axis = UILayoutConstraintAxisHorizontal;
+            firstPersonRow.alignment = UIStackViewAlignmentCenter;
+            firstPersonRow.distribution = UIStackViewDistributionEqualSpacing;
+            [firstPersonRow addArrangedSubview:HonkLabel(@"First-person camera", UIFontWeightSemibold, 15, UIColor.whiteColor)];
+            [firstPersonRow addArrangedSubview:gHonkFirstPersonSwitch];
+            HonkAddRow(gHonkContent, firstPersonRow);
+            HonkAddRow(gHonkContent, HonkLabel(@"Moves the existing game camera to the goose head and follows its rotation. Enable only during gameplay.", UIFontWeightRegular, 12, UIColor.lightTextColor));
             {
                 NSNumber *storedStep = [NSUserDefaults.standardUserDefaults objectForKey:@"HonkMenu.FreeCameraStep"];
                 gHonkFreeCameraStep = storedStep ? fminf(fmaxf(storedStep.floatValue, 0.1f), 2.0f) : 0.5f;
@@ -362,7 +378,6 @@ static void HonkBuildPage(NSInteger page) {
                                                 [NSClassFromString(@"HonkMenuOverlay") class],
                                                 @selector(menuAction:)));
             HonkAddRow(gHonkContent, HonkLabel(@"Uses the live follow-camera position. Save your location first if testing near obstacles.", UIFontWeightRegular, 12, UIColor.lightTextColor));
-            HonkAddUnavailable(@"First-person camera", @"the game camera uses a follow rig; switching camera modes is not mapped");
             HonkAddRow(gHonkContent, HonkLabel(@"Follow camera distance is available under Move → Camera.", UIFontWeightRegular, 12, UIColor.lightTextColor));
             break;
         case 3:
@@ -638,6 +653,8 @@ static void HonkBuildPage(NSInteger page) {
     }
     if (gHonkFreeCameraSwitch && gHonkState)
         [gHonkFreeCameraSwitch setOn:HonkFeatures::freeCameraEnabled(gHonkState) animated:NO];
+    if (gHonkFirstPersonSwitch && gHonkState)
+        [gHonkFirstPersonSwitch setOn:HonkFeatures::firstPersonCameraEnabled(gHonkState) animated:NO];
     [gHonkNpcOverlay setNeedsDisplay];
 }
 
@@ -679,6 +696,11 @@ static void HonkBuildPage(NSInteger page) {
                 if (!HonkFeatures::setFreeCameraEnabled(gHonkState, enabled)) {
                     ((UISwitch *)sender).on = NO;
                 }
+                if (enabled) [gHonkFirstPersonSwitch setOn:NO animated:NO];
+                break;
+            case 16:
+                HonkFeatures::setFirstPersonCameraEnabled(gHonkState, enabled);
+                if (enabled) [gHonkFreeCameraSwitch setOn:NO animated:NO];
                 break;
         }
     } else if ([sender isKindOfClass:UISlider.class]) {
@@ -770,6 +792,7 @@ static void HonkBuildPage(NSInteger page) {
         GooseJumpInput::clear(&gHonkState->pendingState);
         __atomic_store_n(&gHonkState->command, HonkFeatures::kCommandNone, __ATOMIC_RELEASE);
         (void)HonkFeatures::setFreeCameraEnabled(gHonkState, false);
+        HonkFeatures::setFirstPersonCameraEnabled(gHonkState, false);
     }
 }
 

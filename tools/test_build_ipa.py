@@ -128,6 +128,9 @@ class PatcherTests(unittest.TestCase):
             build.BASE + 0x1DD344C,  # UnityEngine.Object.Destroy
             build.BASE + 0x1DEADC0,  # Transform.get_position
             build.BASE + 0x1DEAE6C,  # Transform.set_position for free camera
+            build.BASE + 0x1DEB4BC,  # Transform.get_forward for first-person camera
+            build.BASE + 0x1DEB098,  # Transform.get_rotation
+            build.BASE + 0x1DEB698,  # Transform.set_rotation
             build.BASE + 0x1DB8128,  # Camera.get_main
             build.BASE + 0x1DB7A64,  # Camera.WorldToScreenPoint(Vector3)
             build.BASE + 0x1DE2A24,  # Screen.get_width

@@ -73,6 +73,15 @@ int main() {
     assert(!HonkFeatures::nudgeFreeCamera(&state, 100.0f, 0.0f, 0.0f));
     assert(HonkFeatures::setFreeCameraEnabled(&state, false));
     assert(!HonkFeatures::freeCameraEnabled(&state));
+    assert(!HonkFeatures::firstPersonCameraEnabled(&state));
+    HonkFeatures::setFirstPersonCameraEnabled(&state, true);
+    assert(HonkFeatures::firstPersonCameraEnabled(&state));
+    assert(!HonkFeatures::freeCameraEnabled(&state));
+    assert(HonkFeatures::setFreeCameraEnabled(&state, true));
+    assert(HonkFeatures::freeCameraEnabled(&state));
+    assert(!HonkFeatures::firstPersonCameraEnabled(&state));
+    HonkFeatures::setFirstPersonCameraEnabled(&state, false);
+    assert(!HonkFeatures::firstPersonCameraEnabled(&state));
 
     HonkFeatures::setSpeedFactor(&state, 1.75f);
     assert(std::fabs(HonkFeatures::speedFactor(&state) - 1.75f) < 0.0001f);

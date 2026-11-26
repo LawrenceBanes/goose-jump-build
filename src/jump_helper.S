@@ -1130,6 +1130,7 @@ goose_reloc_camera_hook_data_add:
     .inst   0x91000129              // ADD x9, x9, #lo12(goose_jump_data)
     add     x10, x9, #HONK_FLAGS_OFFSET
     ldar    w10, [x10]
+    tbnz    w10, #5, .Lcamera_first_person
     tbz     w10, #4, .Lcamera_follow_original
 
     // This hook is GooseCameraHelper.LateUpdate(this). The Goose stores its
@@ -1185,6 +1186,58 @@ goose_reloc_camera_free_set_position:
     ldp     x21, x22, [sp, #16]
     ldr     x30, [sp, #32]
     add     sp, sp, #48
+    ret
+
+.Lcamera_first_person:
+    // First-person mode reuses Goose.cameraTransform and the verified Goose.head
+    // Transform. A short forward offset avoids placing the camera at the center
+    // of the head mesh. Missing objects fall through to the original follow rig.
+    ldr     x12, [x0, #0x18]         // GooseCameraHelper.goose
+    cbz     x12, .Lcamera_follow_original
+    ldr     x20, [x12, #0x238]      // Goose.cameraTransform
+    cbz     x20, .Lcamera_follow_original
+    ldr     x19, [x12, #0x1B0]      // Goose.head
+    cbz     x19, .Lcamera_follow_original
+    sub     sp, sp, #64
+    str     x19, [sp, #0]
+    str     x20, [sp, #8]
+    str     x30, [sp, #16]
+    mov     x0, x19
+    mov     x1, xzr
+goose_reloc_camera_firstperson_get_position:
+    .inst   0x94000000              // BL Transform.get_position
+    str     s0, [sp, #24]
+    str     s1, [sp, #28]
+    str     s2, [sp, #32]
+    ldr     x0, [sp, #0]
+    mov     x1, xzr
+goose_reloc_camera_firstperson_get_forward:
+    .inst   0x94000000              // BL Transform.get_forward
+    movz    w12, #0x999a
+    movk    w12, #0x3e19, lsl #16   // float 0.15
+    fmov    s3, w12
+    ldr     s4, [sp, #24]
+    ldr     s5, [sp, #28]
+    ldr     s6, [sp, #32]
+    fmadd   s0, s0, s3, s4
+    fmadd   s1, s1, s3, s5
+    fmadd   s2, s2, s3, s6
+    ldr     x0, [sp, #8]
+    mov     x1, xzr
+goose_reloc_camera_firstperson_set_position:
+    .inst   0x94000000              // BL Transform.set_position
+    ldr     x0, [sp, #0]
+    mov     x1, xzr
+goose_reloc_camera_firstperson_get_rotation:
+    .inst   0x94000000              // BL Transform.get_rotation
+    ldr     x0, [sp, #8]
+    mov     x1, xzr
+goose_reloc_camera_firstperson_set_rotation:
+    .inst   0x94000000              // BL Transform.set_rotation
+    ldr     x19, [sp, #0]
+    ldr     x20, [sp, #8]
+    ldr     x30, [sp, #16]
+    add     sp, sp, #64
     ret
 
 .Lcamera_follow_original:

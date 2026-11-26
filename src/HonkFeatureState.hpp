@@ -26,6 +26,21 @@ inline bool freeCameraEnabled(const GooseJumpData *state) {
     return (flags(state) & kFreeCamera) != 0;
 }
 
+inline bool firstPersonCameraEnabled(const GooseJumpData *state) {
+    return (flags(state) & kFirstPersonCamera) != 0;
+}
+
+inline void setFirstPersonCameraEnabled(GooseJumpData *state, bool enabled) {
+    if (!state) return;
+    uint32_t observed = __atomic_load_n(&state->featureFlags, __ATOMIC_ACQUIRE);
+    uint32_t desired;
+    do {
+        desired = enabled ? ((observed | kFirstPersonCamera) & ~kFreeCamera)
+                          : (observed & ~kFirstPersonCamera);
+    } while (!__atomic_compare_exchange_n(&state->featureFlags, &observed, desired,
+                                           true, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
+}
+
 inline bool setFreeCameraEnabled(GooseJumpData *state, bool enabled) {
     if (!state) return false;
     if (enabled) {
@@ -44,7 +59,8 @@ inline bool setFreeCameraEnabled(GooseJumpData *state, bool enabled) {
     uint32_t observed = __atomic_load_n(&state->featureFlags, __ATOMIC_ACQUIRE);
     uint32_t desired;
     do {
-        desired = enabled ? (observed | kFreeCamera) : (observed & ~kFreeCamera);
+        desired = enabled ? ((observed | kFreeCamera) & ~kFirstPersonCamera)
+                          : (observed & ~kFreeCamera);
     } while (!__atomic_compare_exchange_n(&state->featureFlags, &observed, desired,
                                            true, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
     return true;

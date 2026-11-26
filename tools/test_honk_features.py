@@ -38,7 +38,7 @@ class HonkMenuPortTests(unittest.TestCase):
         self.assertIn("NPC size (active people)", MENU)
         self.assertIn("Camera position: waiting for gameplay", MENU)
         self.assertIn("Teleport goose to current camera", MENU)
-        for control in ("Free camera", "Free camera move step", "Forward", "Back"):
+        for control in ("Free camera", "Free camera move step", "First-person camera", "Forward", "Back"):
             self.assertIn(control, MENU)
         self.assertIn("Camera.main", MENU)
         self.assertIn("Transform.get_position", HELPER)
@@ -47,6 +47,9 @@ class HonkMenuPortTests(unittest.TestCase):
         self.assertIn("goose_camera_free_hook", HELPER)
         self.assertIn("Goose.cameraTransform", HELPER)
         self.assertIn("Transform.set_position", HELPER)
+        self.assertIn("goose_reloc_camera_firstperson_get_forward", HELPER)
+        self.assertIn("goose_reloc_camera_firstperson_get_rotation", HELPER)
+        self.assertIn("setFirstPersonCameraEnabled", MENU)
         for supported in ("Float / hold height", "Custom game speed", "Goose size",
                           "NPC size (active people)", "NPC tracking markers",
                           "Follow camera distance", "Disable NPC shoo"):
@@ -149,7 +152,8 @@ class HonkMenuPortTests(unittest.TestCase):
         expected = {
             "follow-camera-distance", "disable-npc-shoo", "npc-size-all-active-bodies",
             "npc-world-screen-markers", "teleport-to-current-camera", "spawn-and-replace-unity-primitive",
-            "camera-position-readout", "free-camera-world-axis-move", "teleport-to-current-camera",
+            "camera-position-readout", "free-camera-world-axis-move", "first-person-camera",
+            "teleport-to-current-camera",
             "destroy-last-primitive", "experimental-out-of-bounds-teleport",
         }
         self.assertTrue(expected.issubset(set(build_components.HONK_MENU_ACTIONS)))

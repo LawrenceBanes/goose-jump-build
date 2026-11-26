@@ -233,6 +233,7 @@ static constexpr uint32_t kFloatEnabled = 1u << 1;
 static constexpr uint32_t kDisableNpcShoo = 1u << 2;
 static constexpr uint32_t kNpcTracking = 1u << 3;
 static constexpr uint32_t kFreeCamera = 1u << 4;
+static constexpr uint32_t kFirstPersonCamera = 1u << 5;
 static constexpr float kMinimumSpeedFactor = 0.5f;
 static constexpr float kMaximumSpeedFactor = 3.0f;
 static constexpr float kMinimumJumpImpulse = 0.5f;

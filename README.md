@@ -1,16 +1,9 @@
-# Goose Jump iOS source and component builder
+# Untitled Goose Game Jump Mod
 
-This public repository contains the version-pinned ARM64 jump helper, original UIKit jump/menu overlays, patcher source, tests, and macOS build workflow. It contains no Untitled Goose Game IPA, executable, Unity assets, or modified game package.
+Version-pinned ARM64 jump helper and UIKit Honk-Menu port for the iOS game, including jump, movement speed, teleport/save/restore, Float/Hold Height, game speed, Goose size, follow-camera distance and NPC shoo suppression. The intended deployment path is **LiveContainer**. The parity matrix distinguishes implemented controls from upstream tools still blocked by unverified Unity object/render access.
 
-The public GitHub Actions workflow compiles and publishes only these redistributable components:
+The private build repository stores the exact original IPA as a restricted GitHub release asset named `source-ipa`; it is never committed to Git. CI downloads that asset, verifies the original IPA/executable/metadata hashes, compiles the iOS overlay on a macOS runner, patches an isolated copy, validates the IPA, and uploads a private Actions artifact.
 
-- `GooseJump.dylib`, built for arm64 iPhoneOS with the iOS SDK
-- `jump_helper.bin`, assembled and linked from `src/jump_helper.S`
-- the native Honk-Menu UI and movement/teleport command bridge, including Float, game speed, Goose scale, follow-camera distance, and NPC shoo suppression
-- `build-info.json` and `SHA256SUMS.txt`
+Read [HANDOFF.md](HANDOFF.md), [VALIDATION.md](VALIDATION.md), and [LIVECONTAINER_TESTING.md](LIVECONTAINER_TESTING.md) for verified addresses, build state, LiveContainer behavior, and device-test steps.
 
-The actual game IPA is kept separately in a private repository. Final game packaging is performed locally with that private source and `tools/build_ipa.py`; a game IPA must never be uploaded to this public repository, its releases, or its Actions artifacts.
-
-See [BUILD_PUBLIC.md](BUILD_PUBLIC.md) for the CI artifact and local packaging boundary, [DESIGN.md](DESIGN.md) for the patch architecture, and [LIVECONTAINER_TESTING.md](LIVECONTAINER_TESTING.md) for runtime assumptions and device testing. Static checks do not establish successful LiveContainer launch or in-game jumping.
-
-The Honk-Menu feature inventory and iOS port status are documented in [HONK_MENU_PARITY.md](HONK_MENU_PARITY.md). The upstream repository has no declared license; its code and artwork are not copied here. The native interface is a clean implementation informed by feature descriptions and verified game interfaces. The iOS component build itself does not prove these features work at runtime; a physical device test is required.
+The source IPA is proprietary. Do not make this repository public or copy the release asset into Git history. Static validation does not prove successful launch or jumping on a device.
