@@ -8,12 +8,7 @@ on:
       jump_impulse:
         description: Initial vertical impulse (Unity units per second)
         required: true
-        default: "8.5"
-        type: string
-      cooldown:
-        description: Jump cooldown in seconds
-        required: true
-        default: "0.35"
+        default: "2.5"
         type: string
 
 permissions:
@@ -46,8 +41,7 @@ jobs:
 
       - name: Compile and validate iPhoneOS ARM64 components
         env:
-          JUMP_IMPULSE: ${{ inputs.jump_impulse || '8.5' }}
-          JUMP_COOLDOWN: ${{ inputs.cooldown || '0.35' }}
+          JUMP_IMPULSE: ${{ inputs.jump_impulse || '2.5' }}
         run: |
           LLVM_BIN="$(brew --prefix llvm)/bin"
           LD_BIN="$(command -v ld.lld)"
@@ -58,7 +52,6 @@ jobs:
           python3 tools/build_components.py \
             --out build \
             --impulse "$JUMP_IMPULSE" \
-            --cooldown "$JUMP_COOLDOWN" \
             --commit "$GITHUB_SHA" \
             --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" \

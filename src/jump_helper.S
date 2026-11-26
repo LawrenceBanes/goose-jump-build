@@ -1,8 +1,10 @@
-/*
- * ARM64 helper inserted at Mover.FixedUpdate after Rigidbody.set_velocity.
- * The replaced original instruction, ldr x20, [x19, #16], is repeated here.
- * All executable and data symbols are version-pinned by tools/build_ipa.py.
+/* ARM64 helper called from Mover.FixedUpdate after Rigidbody.set_velocity.
+ * It replays the displaced ldr x20,[x19,#16], consumes one queued touch-down,
+ * and writes only Rigidbody velocity.y. See JumpInputQueue.hpp for shared
+ * data offsets and the packed atomic request format.
  */
+
+#include "JumpInputQueue.hpp"
 
 .text
 .p2align 2
@@ -10,9 +12,9 @@
 .type goose_jump_helper, %function
 
 goose_jump_helper:
-    sub     sp, sp, #32
-    str     x22, [sp, #16]
-    str     x30, [sp, #24]
+    sub     sp, sp, #48
+    str     x22, [sp, #32]
+    str     x30, [sp, #40]
     ldr     x20, [x19, #16]          // displaced original instruction
 
 goose_reloc_data_adrp:
@@ -20,190 +22,210 @@ goose_reloc_data_adrp:
 goose_reloc_data_add:
     .inst   0x910002d6              // ADD x22, x22, #lo12(goose_jump_data)
 
-    // Reset per-goose state after a scene replaces the Mover.
-    ldr     x9, [x22, #24]
+    // A new Mover marks a scene/player replacement; never carry its queued
+    // input or temporary tuning cap into the new instance.
+    ldr     x9, [x22, #GOOSE_JUMP_LAST_MOVER_OFFSET]
     cmp     x9, x19
-    b.eq    1f
-    str     x19, [x22, #24]
-    stlr    wzr, [x22]               // request
-    str     wzr, [x22, #4]           // airborne latch
-    str     wzr, [x22, #8]           // cooldown remaining
-    str     wzr, [x22, #32]          // stable grounded frames
-1:
-    // Cooldown advances in physics time and freezes naturally while paused.
-    mov     x0, xzr
-goose_reloc_time_fixed:
-    .inst   0x94000000              // BL UnityEngine.Time.get_fixedDeltaTime
-    ldr     s1, [x22, #8]
-    fsub    s1, s1, s0
-    fmov    s2, wzr
-    fcmp    s1, s2
-    b.gt    2f
-    fmov    s1, wzr
-2:
-    str     s1, [x22, #8]
+    b.eq    .Lsame_mover
+    ldr     w10, [x22, #GOOSE_JUMP_CAP_ACTIVE_OFFSET]
+    cbz     w10, .Lreset_state
+    ldr     x11, [x22, #GOOSE_JUMP_TUNING_DATA_OFFSET]
+    cbz     x11, .Lreset_state
+    ldr     s0, [x22, #GOOSE_JUMP_ORIGINAL_CAP_OFFSET]
+    str     s0, [x11, #0x18]         // restore GooseTuningData.maxUpwardVelocity
+.Lreset_state:
+    stlr    xzr, [x22, #GOOSE_JUMP_PENDING_OFFSET]
+    str     wzr, [x22, #GOOSE_JUMP_CAP_ACTIVE_OFFSET]
+    str     xzr, [x22, #GOOSE_JUMP_TUNING_DATA_OFFSET]
+    str     x19, [x22, #GOOSE_JUMP_LAST_MOVER_OFFSET]
+.Lsame_mover:
+    ldar    x9, [x22, #GOOSE_JUMP_PENDING_OFFSET]
+    cbz     w9, .Lmaybe_maintain_cap
 
-    ldar    w9, [x22]
-    cbz     w9, 8f
-    stlr    wzr, [x22]               // consume every touch once
-
-    // A touch cannot survive an in-game pause even if FixedUpdate resumes fast.
+    // Only touch Unity's Time API from this physics-thread hook.
     mov     x0, xzr
 goose_reloc_time_scale:
     .inst   0x94000000              // BL UnityEngine.Time.get_timeScale
     fmov    s1, wzr
     fcmp    s0, s1
-    b.le    9f
+    b.le    .Lpaused
 
-    // Ignore stale menu/transition touches and negative clock deltas.
-    mov     x0, xzr
-goose_reloc_time_unscaled:
-    .inst   0x94000000              // BL UnityEngine.Time.get_unscaledTime
-    ldr     s1, [x22, #20]
-    fsub    s0, s0, s1
-    fmov    s1, #0.5
-    fcmp    s0, s1
-    b.gt    9f
-    fmov    s1, wzr
-    fcmp    s0, s1
-    b.mi    9f
+.Lqueue_retry:
+    ldar    x9, [x22, #GOOSE_JUMP_PENDING_OFFSET]
+    cbz     w9, .Lmaybe_maintain_cap
+    ldr     w10, [x22, #GOOSE_JUMP_HOST_TIME_OFFSET]
+    fmov    s0, w10
+    lsr     x11, x9, #32
+    fmov    s1, w11
+    fsub    s2, s0, s1
+    fmov    s3, #0.5
+    fcmp    s2, s3
+    b.gt    .Ldiscard_stale
+    fneg    s3, s3
+    fcmp    s2, s3
+    b.lt    .Ldiscard_stale
 
-    cbz     x20, 9f
+    // Consume exactly one queued touch-down. If UIKit enqueues concurrently,
+    // compare/exchange retries against the new packed timestamp/count.
+    sub     x11, x9, #1
+    ldaxr   x10, [x22, #GOOSE_JUMP_PENDING_OFFSET]
+    cmp     x10, x9
+    b.ne    .Lqueue_retry
+    stlxr   w12, x11, [x22, #GOOSE_JUMP_PENDING_OFFSET]
+    cbnz    w12, .Lqueue_retry
+    b       .Lapply_jump
+
+.Ldiscard_stale:
+    // A pause/menu touch expires as one batch, while a newer concurrent tap
+    // changes the packed value and survives the compare/exchange.
+    ldaxr   x10, [x22, #GOOSE_JUMP_PENDING_OFFSET]
+    cmp     x10, x9
+    b.ne    .Lqueue_retry
+    stlxr   w12, xzr, [x22, #GOOSE_JUMP_PENDING_OFFSET]
+    cbnz    w12, .Lqueue_retry
+    b       .Lmaybe_maintain_cap
+
+.Lpaused:
+    // Unity may run a final FixedUpdate while pausing. Clear taps collected
+    // during a paused/menu state; normal paused frames do not enter this hook.
+    ldaxr   x10, [x22, #GOOSE_JUMP_PENDING_OFFSET]
+    cbz     x10, .Lmaybe_maintain_cap
+    stlxr   w12, xzr, [x22, #GOOSE_JUMP_PENDING_OFFSET]
+    cbnz    w12, .Lpaused
+    b       .Lmaybe_maintain_cap
+
+.Lapply_jump:
+    // Consume incompatible presses instead of deferring them until the goose
+    // leaves water or stops dragging.
+    cbz     x20, .Lmaybe_maintain_cap
     ldrb    w9, [x20, #0x250]        // Goose.isSwimming
-    cbnz    w9, 9f
+    cbnz    w9, .Lmaybe_maintain_cap
     ldrb    w9, [x20, #0x14c]        // Goose.gooseSwimmer.isSwimming
-    cbnz    w9, 9f
-
-    // Do not add impulse while the Goose is actively dragging or kinematic.
+    cbnz    w9, .Lmaybe_maintain_cap
     ldr     x9, [x20, #0x58]         // Goose.dragger
-    cbz     x9, 3f
+    cbz     x9, .Ldrag_ok
     ldrb    w10, [x9, #0x38]         // Dragger.active
-    cbnz    w10, 9f
-3:
+    cbnz    w10, .Lmaybe_maintain_cap
+.Ldrag_ok:
     ldr     x9, [x19, #0x18]         // Mover.rb
-    cbz     x9, 9f
+    cbz     x9, .Lmaybe_maintain_cap
     mov     x0, x9
     mov     x1, xzr
 goose_reloc_rb_kinematic:
     .inst   0x94000000              // BL Rigidbody.get_isKinematic
-    cbnz    w0, 9f
+    cbnz    w0, .Lmaybe_maintain_cap
 
-    // GooseGround: alwaysGrounded, static contacts, or prop contact list.
-    ldrb    w9, [x20, #0x105]
-    cbnz    w9, 4f
-    ldr     w9, [x20, #0x108]
-    cmp     w9, #0
-    b.gt    4f
-    ldr     x9, [x20, #0x110]
-    cbz     x9, 9f
-    ldr     w9, [x9, #0x18]         // List<Prop>._size
-    cmp     w9, #0
-    b.le    9f
-4:
-    // A positive Y velocity means airborne; stale contacts cannot retrigger.
     ldr     x9, [x19, #0x18]
     mov     x0, x9
     mov     x1, xzr
 goose_reloc_rb_get_velocity:
     .inst   0x94000000              // BL Rigidbody.get_velocity
-    str     s0, [sp, #0]
-    str     s1, [sp, #4]
-    str     s2, [sp, #8]
+
+    // Reject nonfinite input before arithmetic; no grounded gate is present.
+    fmov    w10, s1
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lmaybe_maintain_cap
     fmov    s3, wzr
     fcmp    s1, s3
-    b.gt    9f
+    b.gt    .Lpositive_velocity
+    fmov    s1, s3
+.Lpositive_velocity:
+    ldr     s3, [x22, #GOOSE_JUMP_IMPULSE_OFFSET]
+    fmov    w10, s3
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lmaybe_maintain_cap
+    fcmp    s3, s3
+    b.vs    .Lmaybe_maintain_cap
+    fmov    s4, wzr
+    fcmp    s3, s4
+    b.le    .Lmaybe_maintain_cap
+    fadd    s1, s1, s3              // max(currentY, 0) + configured impulse
+    fmov    w10, s1
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255               // reject overflow to NaN/Infinity
+    b.eq    .Lmaybe_maintain_cap
 
-    // Require two grounded physics observations before clearing the airborne
-    // latch. This tolerates one stale collision contact at takeoff/apex.
-    ldr     w9, [x22, #4]
-    cbz     w9, 5f
-    ldr     w9, [x22, #32]
-    add     w9, w9, #1
-    str     w9, [x22, #32]
-    cmp     w9, #2
-    b.lo    9f
-    str     wzr, [x22, #4]
-    str     wzr, [x22, #32]
-    b       6f
-5:
-    str     wzr, [x22, #32]
-6:
-    ldr     s1, [x22, #8]
-    fmov    s2, wzr
-    fcmp    s1, s2
-    b.gt    9f
-
-    // Clamp configured strength to the game's own upward velocity ceiling.
-    ldr     x9, [x20, #0x20]         // Goose.tuningData
-    cbz     x9, 9f
-    ldr     s2, [x9, #0x18]         // GooseTuningData.maxUpwardVelocity
-    ldr     s1, [x22, #12]          // configured jump impulse
-    fmin    s1, s1, s2
-    fmov    s2, wzr
-    fcmp    s1, s2
-    b.le    9f
-
+    // Temporarily raise the game's upward-velocity ceiling only as high as
+    // this jump's actual Y velocity. Goose.FixedUpdate clamps to this field
+    // after Mover.FixedUpdate; tracking it each tick preserves gravity while
+    // avoiding changes to unrelated movement after the jump falls below cap.
+    ldr     x11, [x20, #0x20]        // Goose.tuningData
+    cbz     x11, .Lmaybe_maintain_cap
+    ldr     w10, [x22, #GOOSE_JUMP_CAP_ACTIVE_OFFSET]
+    cbz     w10, .Lsave_original_cap
+    ldr     x12, [x22, #GOOSE_JUMP_TUNING_DATA_OFFSET]
+    cmp     x12, x11
+    b.eq    .Lset_jump_cap
+    cbz     x12, .Lsave_original_cap
+    ldr     s4, [x22, #GOOSE_JUMP_ORIGINAL_CAP_OFFSET]
+    str     s4, [x12, #0x18]
+.Lsave_original_cap:
+    ldr     s4, [x11, #0x18]
+    str     s4, [x22, #GOOSE_JUMP_ORIGINAL_CAP_OFFSET]
+    str     x11, [x22, #GOOSE_JUMP_TUNING_DATA_OFFSET]
+    mov     w10, #1
+    str     w10, [x22, #GOOSE_JUMP_CAP_ACTIVE_OFFSET]
+.Lset_jump_cap:
+    str     s1, [x11, #0x18]
+    str     s0, [sp, #0]            // preserve horizontal X/Z across setter call
+    str     s2, [sp, #8]
     ldr     x0, [x19, #0x18]
     ldr     s0, [sp, #0]
     ldr     s2, [sp, #8]
     mov     x1, xzr
 goose_reloc_rb_set_velocity:
     .inst   0x94000000              // BL Rigidbody.set_velocity
-    mov     w9, #1
-    str     w9, [x22, #4]
-    str     wzr, [x22, #32]
-    ldr     s1, [x22, #16]
-    str     s1, [x22, #8]
-    b       9f
+    b       .Ldone
 
-8:
-    // Keep the landing latch current even when the player waits before tapping.
-    // A stable contact over two physics updates is required to re-arm jumping.
-    ldr     w9, [x22, #4]
-    cbz     w9, 9f
-    cbz     x20, .Lrearm_reset
+.Lmaybe_maintain_cap:
+    ldr     w9, [x22, #GOOSE_JUMP_CAP_ACTIVE_OFFSET]
+    cbz     w9, .Ldone
+    cbz     x20, .Lrestore_cap
     ldrb    w9, [x20, #0x250]
-    cbnz    w9, .Lrearm_reset
+    cbnz    w9, .Lrestore_cap
     ldrb    w9, [x20, #0x14c]
-    cbnz    w9, .Lrearm_reset
+    cbnz    w9, .Lrestore_cap
     ldr     x9, [x20, #0x58]
-    cbz     x9, .Lrearm_drag_ok
+    cbz     x9, .Lmaintain_drag_ok
     ldrb    w10, [x9, #0x38]
-    cbnz    w10, .Lrearm_reset
-.Lrearm_drag_ok:
-    ldrb    w9, [x20, #0x105]
-    cbnz    w9, .Lrearm_grounded
-    ldr     w9, [x20, #0x108]
-    cmp     w9, #0
-    b.gt    .Lrearm_grounded
-    ldr     x9, [x20, #0x110]
-    cbz     x9, .Lrearm_reset
-    ldr     w9, [x9, #0x18]
-    cmp     w9, #0
-    b.le    .Lrearm_reset
-.Lrearm_grounded:
+    cbnz    w10, .Lrestore_cap
+.Lmaintain_drag_ok:
+    ldr     x11, [x22, #GOOSE_JUMP_TUNING_DATA_OFFSET]
+    cbz     x11, .Lrestore_cap
+    ldr     x12, [x20, #0x20]
+    cmp     x12, x11
+    b.ne    .Lrestore_cap
     ldr     x9, [x19, #0x18]
-    cbz     x9, .Lrearm_reset
+    cbz     x9, .Lrestore_cap
     mov     x0, x9
     mov     x1, xzr
-goose_reloc_rb_get_velocity_rearm:
+goose_reloc_rb_get_velocity_maintain:
     .inst   0x94000000              // BL Rigidbody.get_velocity
-    fmov    s3, wzr
-    fcmp    s1, s3
-    b.gt    .Lrearm_reset
-    ldr     w9, [x22, #32]
-    add     w9, w9, #1
-    str     w9, [x22, #32]
-    cmp     w9, #2
-    b.lo    9f
-    str     wzr, [x22, #4]
-.Lrearm_reset:
-    str     wzr, [x22, #32]
+    fmov    w10, s1
+    ubfx    w10, w10, #23, #8
+    cmp     w10, #255
+    b.eq    .Lrestore_cap
+    ldr     s2, [x22, #GOOSE_JUMP_ORIGINAL_CAP_OFFSET]
+    fcmp    s1, s2
+    b.le    .Lrestore_cap
+    str     s1, [x11, #0x18]
+    b       .Ldone
 
-9:
-    ldr     x22, [sp, #16]
-    ldr     x30, [sp, #24]
-    add     sp, sp, #32
+.Lrestore_cap:
+    ldr     x11, [x22, #GOOSE_JUMP_TUNING_DATA_OFFSET]
+    cbz     x11, .Lclear_cap_state
+    ldr     s1, [x22, #GOOSE_JUMP_ORIGINAL_CAP_OFFSET]
+    str     s1, [x11, #0x18]
+.Lclear_cap_state:
+    str     wzr, [x22, #GOOSE_JUMP_CAP_ACTIVE_OFFSET]
+    str     xzr, [x22, #GOOSE_JUMP_TUNING_DATA_OFFSET]
+
+.Ldone:
+    ldr     x22, [sp, #32]
+    ldr     x30, [sp, #40]
+    add     sp, sp, #48
     ret
 
 .size goose_jump_helper, .-goose_jump_helper

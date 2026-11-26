@@ -28,8 +28,7 @@ def run(argv: list[str], *, capture: bool = False) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=Path("build"))
-    parser.add_argument("--impulse", type=float, default=8.5)
-    parser.add_argument("--cooldown", type=float, default=0.35)
+    parser.add_argument("--impulse", type=float, default=2.5)
     parser.add_argument("--commit", default=os.environ.get("GITHUB_SHA", "local"))
     parser.add_argument("--run-id", default=os.environ.get("GITHUB_RUN_ID", "local"))
     parser.add_argument("--run-attempt", default=os.environ.get("GITHUB_RUN_ATTEMPT", "1"))
@@ -40,7 +39,7 @@ def main() -> None:
     parser.add_argument("--objcopy", default="llvm-objcopy")
     parser.add_argument("--nm", default="llvm-nm")
     args = parser.parse_args()
-    for name, value in (("impulse", args.impulse), ("cooldown", args.cooldown)):
+    for name, value in (("impulse", args.impulse),):
         if not math.isfinite(value) or value <= 0 or value > 100:
             raise SystemExit(f"{name} must be finite and in (0, 100]")
 
@@ -52,7 +51,6 @@ def main() -> None:
     run(["xcrun", "--sdk", "iphoneos", "clang++", "-arch", "arm64", "-fobjc-arc",
          "-dynamiclib", "-miphoneos-version-min=15.0", "-isysroot", sdk_path,
          f"-DGOOSE_JUMP_IMPULSE={args.impulse}f",
-         f"-DGOOSE_JUMP_COOLDOWN={args.cooldown}f",
          str(build_ipa.ROOT / "src/JumpOverlay.mm"), "-framework", "Foundation",
          "-framework", "UIKit", "-Wl,-undefined,error",
          f"-Wl,-install_name,{build_ipa.DYLIB_INSTALL_NAME}", "-o", str(dylib)])
@@ -92,7 +90,6 @@ def main() -> None:
         "xcode": version,
         "host_architecture": platform.machine(),
         "jump_impulse": args.impulse,
-        "cooldown_seconds": args.cooldown,
         "helper_file": helper_path.name,
         "helper_sha256": digest(helper_path),
         "helper_size": len(helper),

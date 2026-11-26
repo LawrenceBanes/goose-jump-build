@@ -51,12 +51,10 @@ S_ATTR_SOME_INSTRUCTIONS = 0x00000400
 RELOCS = {
     "goose_reloc_data_adrp": ("adrp", DATA_VA, 22),
     "goose_reloc_data_add": ("add", DATA_VA, 22),
-    "goose_reloc_time_fixed": ("bl", BASE + 0x1DE9F20, None),
-    "goose_reloc_time_unscaled": ("bl", BASE + 0x1DE9E60, None),
     "goose_reloc_time_scale": ("bl", BASE + 0x1DE9FE0, None),
     "goose_reloc_rb_kinematic": ("bl", BASE + 0x1E15DA8, None),
     "goose_reloc_rb_get_velocity": ("bl", BASE + 0x1E15850, None),
-    "goose_reloc_rb_get_velocity_rearm": ("bl", BASE + 0x1E15850, None),
+    "goose_reloc_rb_get_velocity_maintain": ("bl", BASE + 0x1E15850, None),
     "goose_reloc_rb_set_velocity": ("bl", BASE + 0x1E158FC, None),
 }
 
