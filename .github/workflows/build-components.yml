@@ -62,7 +62,7 @@ jobs:
           xcrun --sdk iphoneos otool -hv -l build/GooseJump.dylib
           xcrun --sdk iphoneos vtool -show-build build/GooseJump.dylib
           xcrun --sdk iphoneos otool -L build/GooseJump.dylib
-          xcrun --sdk iphoneos nm -gU build/GooseJump.dylib | grep GooseJumpOverlay
+          xcrun --sdk iphoneos nm -gU build/GooseJump.dylib | grep -E 'GooseJumpOverlay|HonkMenuOverlay'
           (cd build && shasum -a 256 -c SHA256SUMS.txt)
 
       - name: Publish redistributable components only

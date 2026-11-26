@@ -51,7 +51,8 @@ def main() -> None:
     run(["xcrun", "--sdk", "iphoneos", "clang++", "-std=c++17", "-arch", "arm64", "-fobjc-arc",
          "-dynamiclib", "-miphoneos-version-min=15.0", "-isysroot", sdk_path,
          f"-DGOOSE_JUMP_IMPULSE={args.impulse}f",
-         str(build_ipa.ROOT / "src/JumpOverlay.mm"), "-framework", "Foundation",
+         str(build_ipa.ROOT / "src/JumpOverlay.mm"),
+         str(build_ipa.ROOT / "src/HonkMenuOverlay.mm"), "-framework", "Foundation",
          "-framework", "UIKit", "-framework", "QuartzCore", "-framework", "CoreGraphics",
          "-Wl,-undefined,error",
          f"-Wl,-install_name,{build_ipa.DYLIB_INSTALL_NAME}", "-o", str(dylib)])
@@ -77,12 +78,13 @@ def main() -> None:
     if "Simulator" in load_info or "iPhoneSimulator" in load_info:
         raise ValueError("simulator-only dependency found in iPhoneOS dylib")
     symbols = run(["xcrun", "--sdk", "iphoneos", "nm", "-gU", str(dylib)], capture=True)
-    if "GooseJumpOverlay" not in symbols:
-        raise ValueError("compiled dylib is missing the GooseJumpOverlay Objective-C class symbols")
+    for class_name in ("GooseJumpOverlay", "HonkMenuOverlay"):
+        if class_name not in symbols:
+            raise ValueError(f"compiled dylib is missing the {class_name} Objective-C class symbols")
 
     version = run([args.xcode, "-version"], capture=True).strip()
     manifest = {
-        "schema": 1,
+        "schema": 2,
         "source_commit": args.commit,
         "workflow_run_id": str(args.run_id),
         "workflow_run_attempt": str(args.run_attempt),
@@ -92,6 +94,8 @@ def main() -> None:
         "xcode": version,
         "host_architecture": platform.machine(),
         "jump_impulse": args.impulse,
+        "native_honk_menu": True,
+        "honk_menu_actions": ["jump-toggle", "jump-impulse", "horizontal-speed", "save-position", "restore-position", "area-teleport", "practice-teleport"],
         "helper_file": helper_path.name,
         "helper_sha256": digest(helper_path),
         "helper_size": len(helper),
@@ -100,7 +104,8 @@ def main() -> None:
         "dylib_size": len(dylib_bytes),
         "dylib_install_name": build_ipa.DYLIB_INSTALL_NAME,
         "dylib_load_dependencies": [line.strip() for line in load_info.splitlines()[1:] if line.strip()],
-        "dylib_exported_symbols": [line.strip() for line in symbols.splitlines() if "GooseJumpOverlay" in line],
+        "dylib_exported_symbols": [line.strip() for line in symbols.splitlines()
+                                    if "GooseJumpOverlay" in line or "HonkMenuOverlay" in line],
     }
     manifest_path = out / "build-info.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")

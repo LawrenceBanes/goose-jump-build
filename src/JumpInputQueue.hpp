@@ -8,6 +8,16 @@
 #define GOOSE_JUMP_ORIGINAL_CAP_OFFSET 32
 #define GOOSE_JUMP_HOST_TIME_OFFSET 36
 #define GOOSE_JUMP_QUEUE_TTL_SECONDS 0.5f
+#define HONK_FLAGS_OFFSET 40
+#define HONK_COMMAND_OFFSET 44
+#define HONK_TARGET_X_OFFSET 48
+#define HONK_TARGET_Y_OFFSET 52
+#define HONK_TARGET_Z_OFFSET 56
+#define HONK_SAVED_X_OFFSET 60
+#define HONK_SAVED_Y_OFFSET 64
+#define HONK_SAVED_Z_OFFSET 68
+#define HONK_SPEED_FACTOR_OFFSET 72
+#define HONK_SAVED_VALID_OFFSET 76
 
 #ifndef __ASSEMBLER__
 #include <math.h>
@@ -23,6 +33,16 @@ typedef struct GooseJumpData {
     uintptr_t tuningData;
     float originalMaxUpwardVelocity;
     volatile uint32_t hostTimeBits;
+    volatile uint32_t featureFlags;
+    volatile uint32_t command;
+    volatile uint32_t targetXBits;
+    volatile uint32_t targetYBits;
+    volatile uint32_t targetZBits;
+    volatile uint32_t savedXBits;
+    volatile uint32_t savedYBits;
+    volatile uint32_t savedZBits;
+    volatile uint32_t speedFactorBits;
+    volatile uint32_t savedPositionValid;
 } GooseJumpData;
 
 static_assert(offsetof(GooseJumpData, pendingState) == GOOSE_JUMP_PENDING_OFFSET);
@@ -32,6 +52,16 @@ static_assert(offsetof(GooseJumpData, lastMover) == GOOSE_JUMP_LAST_MOVER_OFFSET
 static_assert(offsetof(GooseJumpData, tuningData) == GOOSE_JUMP_TUNING_DATA_OFFSET);
 static_assert(offsetof(GooseJumpData, originalMaxUpwardVelocity) == GOOSE_JUMP_ORIGINAL_CAP_OFFSET);
 static_assert(offsetof(GooseJumpData, hostTimeBits) == GOOSE_JUMP_HOST_TIME_OFFSET);
+static_assert(offsetof(GooseJumpData, featureFlags) == HONK_FLAGS_OFFSET);
+static_assert(offsetof(GooseJumpData, command) == HONK_COMMAND_OFFSET);
+static_assert(offsetof(GooseJumpData, targetXBits) == HONK_TARGET_X_OFFSET);
+static_assert(offsetof(GooseJumpData, targetYBits) == HONK_TARGET_Y_OFFSET);
+static_assert(offsetof(GooseJumpData, targetZBits) == HONK_TARGET_Z_OFFSET);
+static_assert(offsetof(GooseJumpData, savedXBits) == HONK_SAVED_X_OFFSET);
+static_assert(offsetof(GooseJumpData, savedYBits) == HONK_SAVED_Y_OFFSET);
+static_assert(offsetof(GooseJumpData, savedZBits) == HONK_SAVED_Z_OFFSET);
+static_assert(offsetof(GooseJumpData, speedFactorBits) == HONK_SPEED_FACTOR_OFFSET);
+static_assert(offsetof(GooseJumpData, savedPositionValid) == HONK_SAVED_VALID_OFFSET);
 
 namespace GooseJumpInput {
 
@@ -96,4 +126,58 @@ inline void clear(volatile uint64_t *state) {
 }
 
 } // namespace GooseJumpInput
+
+namespace HonkFeatures {
+
+static constexpr uint32_t kJumpEnabled = 1u << 0;
+static constexpr uint32_t kCommandNone = 0;
+static constexpr uint32_t kCommandSavePosition = 1;
+static constexpr uint32_t kCommandRestorePosition = 2;
+static constexpr uint32_t kCommandTeleport = 3;
+static constexpr float kMinimumSpeedFactor = 0.5f;
+static constexpr float kMaximumSpeedFactor = 3.0f;
+static constexpr float kMinimumJumpImpulse = 0.5f;
+static constexpr float kMaximumJumpImpulse = 12.0f;
+static constexpr float kMaximumTeleportCoordinate = 100.0f;
+
+inline bool finiteAndInRange(float value, float absoluteLimit) {
+    return isfinite(value) && value >= -absoluteLimit && value <= absoluteLimit;
+}
+
+inline bool validTeleport(float x, float y, float z) {
+    return finiteAndInRange(x, kMaximumTeleportCoordinate) &&
+           finiteAndInRange(y, kMaximumTeleportCoordinate) &&
+           finiteAndInRange(z, kMaximumTeleportCoordinate);
+}
+
+inline float boundedSpeedFactor(float value) {
+    if (!isfinite(value)) return 1.0f;
+    if (value < kMinimumSpeedFactor) return kMinimumSpeedFactor;
+    if (value > kMaximumSpeedFactor) return kMaximumSpeedFactor;
+    return value;
+}
+
+inline float boundedJumpImpulse(float value) {
+    if (!isfinite(value)) return 2.5f;
+    if (value < kMinimumJumpImpulse) return kMinimumJumpImpulse;
+    if (value > kMaximumJumpImpulse) return kMaximumJumpImpulse;
+    return value;
+}
+
+inline bool publishTeleport(GooseJumpData *state, float x, float y, float z) {
+    if (!state || !validTeleport(x, y, z)) return false;
+    __atomic_store_n(&state->targetXBits, GooseJumpInput::floatBits(x), __ATOMIC_RELAXED);
+    __atomic_store_n(&state->targetYBits, GooseJumpInput::floatBits(y), __ATOMIC_RELAXED);
+    __atomic_store_n(&state->targetZBits, GooseJumpInput::floatBits(z), __ATOMIC_RELAXED);
+    __atomic_store_n(&state->command, kCommandTeleport, __ATOMIC_RELEASE);
+    return true;
+}
+
+inline bool publishCommand(GooseJumpData *state, uint32_t command) {
+    if (!state || command < kCommandSavePosition || command > kCommandTeleport) return false;
+    __atomic_store_n(&state->command, command, __ATOMIC_RELEASE);
+    return true;
+}
+
+} // namespace HonkFeatures
 #endif

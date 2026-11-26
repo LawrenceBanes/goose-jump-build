@@ -37,10 +37,220 @@ goose_reloc_data_add:
     stlr    xzr, [x22, #GOOSE_JUMP_PENDING_OFFSET]
     str     wzr, [x22, #GOOSE_JUMP_CAP_ACTIVE_OFFSET]
     str     xzr, [x22, #GOOSE_JUMP_TUNING_DATA_OFFSET]
+    add     x10, x22, #HONK_COMMAND_OFFSET
+    stlr    wzr, [x10]
+    add     x10, x22, #HONK_SAVED_VALID_OFFSET
+    stlr    wzr, [x10]
     str     x19, [x22, #GOOSE_JUMP_LAST_MOVER_OFFSET]
 .Lsame_mover:
+    // Apply the UI speed multiplier to the horizontal velocity computed by
+    // the original Mover.FixedUpdate. The game recomputes that velocity on
+    // every call, so this does not compound across physics ticks.
+    add     x10, x22, #HONK_SPEED_FACTOR_OFFSET
+    ldar    w10, [x10]
+    fmov    s4, w10
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lprocess_command
+    fmov    s3, #1.0
+    fcmp    s4, s3
+    b.eq    .Lprocess_command
+    fmov    s3, #0.5
+    fcmp    s4, s3
+    b.lt    .Lprocess_command
+    fmov    s3, #3.0
+    fcmp    s4, s3
+    b.gt    .Lprocess_command
+    ldr     x9, [x19, #0x18]
+    cbz     x9, .Lprocess_command
+    mov     x0, x9
+    mov     x1, xzr
+goose_reloc_speed_get_velocity:
+    .inst   0x94000000              // BL Rigidbody.get_velocity
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lprocess_command
+    fmov    w10, s2
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lprocess_command
+    add     x10, x22, #HONK_SPEED_FACTOR_OFFSET
+    ldar    w10, [x10]
+    fmov    s3, w10
+    fmul    s0, s0, s3
+    fmul    s2, s2, s3
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lprocess_command
+    fmov    w10, s2
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lprocess_command
+    str     s0, [sp, #0]
+    str     s1, [sp, #4]
+    str     s2, [sp, #8]
+    ldr     x0, [x19, #0x18]
+    ldr     s0, [sp, #0]
+    ldr     s1, [sp, #4]
+    ldr     s2, [sp, #8]
+    mov     x1, xzr
+goose_reloc_speed_set_velocity:
+    .inst   0x94000000              // BL Rigidbody.set_velocity
+
+.Lprocess_command:
+    // Game-thread work is serialized here. UIKit only publishes a bounded
+    // command and coordinates; it never calls into Unity from the main thread.
+    add     x10, x22, #HONK_COMMAND_OFFSET
+    ldar    w9, [x10]
+    cbz     w9, .Lafter_command
+    mov     x0, xzr
+goose_reloc_command_time_scale:
+    .inst   0x94000000              // BL UnityEngine.Time.get_timeScale
+    fmov    s1, wzr
+    fcmp    s0, s1
+    b.le    .Lafter_command         // keep the request pending while paused
+    add     x10, x22, #HONK_COMMAND_OFFSET
+    ldar    w9, [x10]
+    cbz     w9, .Lafter_command
+    stlr    wzr, [x10]
+    cmp     w9, #1
+    b.eq    .Lsave_position
+    cmp     w9, #2
+    b.eq    .Lrestore_position
+    cmp     w9, #3
+    b.eq    .Lteleport_position
+    b       .Lafter_command
+
+.Lsave_position:
+    ldr     x0, [x19, #0x18]
+    cbz     x0, .Lafter_command
+    mov     x1, xzr
+goose_reloc_get_position:
+    .inst   0x94000000              // BL Rigidbody.get_position
+    // Store only finite coordinates; the later restore is also validated.
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    fmov    w10, s1
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    fmov    w10, s2
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    mov     w10, #100
+    scvtf   s3, w10
+    fabs    s4, s0
+    fcmp    s4, s3
+    b.gt    .Lafter_command
+    fabs    s4, s1
+    fcmp    s4, s3
+    b.gt    .Lafter_command
+    fabs    s4, s2
+    fcmp    s4, s3
+    b.gt    .Lafter_command
+    str     s0, [x22, #HONK_SAVED_X_OFFSET]
+    str     s1, [x22, #HONK_SAVED_Y_OFFSET]
+    str     s2, [x22, #HONK_SAVED_Z_OFFSET]
+    mov     w10, #1
+    add     x11, x22, #HONK_SAVED_VALID_OFFSET
+    stlr    w10, [x11]
+    b       .Lafter_command
+
+.Lrestore_position:
+    add     x11, x22, #HONK_SAVED_VALID_OFFSET
+    ldar    w10, [x11]
+    cbz     w10, .Lafter_command
+    ldr     s0, [x22, #HONK_SAVED_X_OFFSET]
+    ldr     s1, [x22, #HONK_SAVED_Y_OFFSET]
+    ldr     s2, [x22, #HONK_SAVED_Z_OFFSET]
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    fmov    w10, s1
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    fmov    w10, s2
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    mov     w10, #100
+    scvtf   s3, w10
+    fabs    s4, s0
+    fcmp    s4, s3
+    b.gt    .Lafter_command
+    fabs    s4, s1
+    fcmp    s4, s3
+    b.gt    .Lafter_command
+    fabs    s4, s2
+    fcmp    s4, s3
+    b.gt    .Lafter_command
+    b       .Lmove_to_position
+
+.Lteleport_position:
+    ldr     s0, [x22, #HONK_TARGET_X_OFFSET]
+    ldr     s1, [x22, #HONK_TARGET_Y_OFFSET]
+    ldr     s2, [x22, #HONK_TARGET_Z_OFFSET]
+    // Reject NaN/Infinity and coordinates outside supported map bounds.
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    fmov    w10, s1
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    fmov    w10, s2
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    mov     w10, #100
+    scvtf   s3, w10
+    fabs    s4, s0
+    fcmp    s4, s3
+    b.gt    .Lafter_command
+    fabs    s4, s1
+    fcmp    s4, s3
+    b.gt    .Lafter_command
+    fabs    s4, s2
+    fcmp    s4, s3
+    b.gt    .Lafter_command
+.Lmove_to_position:
+    str     s0, [sp, #0]
+    str     s1, [sp, #4]
+    str     s2, [sp, #8]
+    ldr     x0, [x19, #0x18]
+    cbz     x0, .Lafter_command
+    ldr     s0, [sp, #0]
+    ldr     s1, [sp, #4]
+    ldr     s2, [sp, #8]
+    mov     x1, xzr
+goose_reloc_move_position:
+    .inst   0x94000000              // BL Rigidbody.MovePosition
+    // Clear momentum on arrival without bypassing Unity collision handling.
+    ldr     x0, [x19, #0x18]
+    fmov    s0, wzr
+    fmov    s1, wzr
+    fmov    s2, wzr
+    mov     x1, xzr
+goose_reloc_teleport_clear_velocity:
+    .inst   0x94000000              // BL Rigidbody.set_velocity
+
+.Lafter_command:
     ldar    x9, [x22, #GOOSE_JUMP_PENDING_OFFSET]
     cbz     w9, .Lmaybe_maintain_cap
+    add     x10, x22, #HONK_FLAGS_OFFSET
+    ldar    w10, [x10]
+    tbnz    w10, #0, .Ljump_enabled
+    stlr    xzr, [x22, #GOOSE_JUMP_PENDING_OFFSET]
+    b       .Lmaybe_maintain_cap
+.Ljump_enabled:
 
     // Only touch Unity's Time API from this physics-thread hook.
     mov     x0, xzr
@@ -131,8 +341,9 @@ goose_reloc_rb_get_velocity:
     b.gt    .Lpositive_velocity
     fmov    s1, s3
 .Lpositive_velocity:
-    ldr     s3, [x22, #GOOSE_JUMP_IMPULSE_OFFSET]
-    fmov    w10, s3
+    add     x10, x22, #GOOSE_JUMP_IMPULSE_OFFSET
+    ldar    w10, [x10]
+    fmov    s3, w10
     ubfx    w11, w10, #23, #8
     cmp     w11, #255
     b.eq    .Lmaybe_maintain_cap

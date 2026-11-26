@@ -93,6 +93,21 @@ class PatcherTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "hash mismatch"):
             build.patch_executable(self.original[:-1] + bytes([self.original[-1] ^ 1]), b"\x1f\x20\x03\xd5")
 
+    def test_honk_rigidbody_call_targets_are_verified_function_entries(self):
+        image = build.audit.macho_info(build.audit.EXE)
+        starts = set(image["function_starts"])
+        required = {
+            build.BASE + 0x1E15850,  # Rigidbody.get_velocity
+            build.BASE + 0x1E158FC,  # Rigidbody.set_velocity
+            build.BASE + 0x1E16108,  # Rigidbody.get_position
+            build.BASE + 0x1E16454,  # Rigidbody.MovePosition
+            build.BASE + 0x1DE9FE0,  # Time.get_timeScale
+        }
+        self.assertTrue(required.issubset(starts))
+        with tempfile.TemporaryDirectory() as temp:
+            helper = build.make_helper(Path(temp), "clang", "ld.lld", "llvm-objcopy", "llvm-nm")
+        self.assertLessEqual(len(helper), build.CODE_END_VA - build.HELPER_VA)
+
     def test_package_never_targets_original_or_extracted_inputs(self):
         for protected in (build.IPA, ROOT / "extracted/Payload/untitledgooseport.app/untitledgooseport"):
             with self.subTest(protected=protected), self.assertRaisesRegex(ValueError, "preserved"):
