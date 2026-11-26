@@ -49,7 +49,7 @@ def main() -> None:
     dylib = out / "GooseJump.dylib"
     helper_path = out / "jump_helper.bin"
     sdk_path = run(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], capture=True).strip()
-    run(["xcrun", "--sdk", "iphoneos", "clang", "-arch", "arm64", "-fobjc-arc",
+    run(["xcrun", "--sdk", "iphoneos", "clang++", "-arch", "arm64", "-fobjc-arc",
          "-dynamiclib", "-miphoneos-version-min=15.0", "-isysroot", sdk_path,
          f"-DGOOSE_JUMP_IMPULSE={args.impulse}f",
          f"-DGOOSE_JUMP_COOLDOWN={args.cooldown}f",
@@ -72,6 +72,8 @@ def main() -> None:
     for framework in ("Foundation.framework/Foundation", "UIKit.framework/UIKit"):
         if framework not in load_info:
             raise ValueError(f"compiled dylib is missing expected dependency {framework}")
+    if "libc++.1.dylib" not in load_info:
+        raise ValueError("compiled Objective-C++ dylib is missing the iOS C++ runtime dependency")
     if "Simulator" in load_info or "iPhoneSimulator" in load_info:
         raise ValueError("simulator-only dependency found in iPhoneOS dylib")
     symbols = run(["xcrun", "--sdk", "iphoneos", "nm", "-gU", str(dylib)], capture=True)
