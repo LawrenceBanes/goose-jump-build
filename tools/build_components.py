@@ -48,11 +48,12 @@ def main() -> None:
     dylib = out / "GooseJump.dylib"
     helper_path = out / "jump_helper.bin"
     sdk_path = run(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], capture=True).strip()
-    run(["xcrun", "--sdk", "iphoneos", "clang++", "-arch", "arm64", "-fobjc-arc",
+    run(["xcrun", "--sdk", "iphoneos", "clang++", "-std=c++17", "-arch", "arm64", "-fobjc-arc",
          "-dynamiclib", "-miphoneos-version-min=15.0", "-isysroot", sdk_path,
          f"-DGOOSE_JUMP_IMPULSE={args.impulse}f",
          str(build_ipa.ROOT / "src/JumpOverlay.mm"), "-framework", "Foundation",
-         "-framework", "UIKit", "-Wl,-undefined,error",
+         "-framework", "UIKit", "-framework", "QuartzCore", "-framework", "CoreGraphics",
+         "-Wl,-undefined,error",
          f"-Wl,-install_name,{build_ipa.DYLIB_INSTALL_NAME}", "-o", str(dylib)])
     dylib_bytes = dylib.read_bytes()
     build_ipa.validate_dylib(dylib_bytes)
@@ -67,7 +68,8 @@ def main() -> None:
     helper_path.write_bytes(helper)
 
     load_info = run(["xcrun", "--sdk", "iphoneos", "otool", "-L", str(dylib)], capture=True)
-    for framework in ("Foundation.framework/Foundation", "UIKit.framework/UIKit"):
+    for framework in ("Foundation.framework/Foundation", "UIKit.framework/UIKit",
+                      "QuartzCore.framework/QuartzCore", "CoreGraphics.framework/CoreGraphics"):
         if framework not in load_info:
             raise ValueError(f"compiled dylib is missing expected dependency {framework}")
     if "libc++.1.dylib" not in load_info:
