@@ -313,6 +313,10 @@ static void HonkBuildPage(NSInteger page) {
         case 2:
             gHonkCameraPositionLabel = HonkLabel(@"Camera position: waiting for gameplay", UIFontWeightRegular, 12, UIColor.lightTextColor);
             HonkAddRow(gHonkContent, gHonkCameraPositionLabel);
+            HonkAddRow(gHonkContent, HonkButton(@"Teleport goose to current camera", 3,
+                                                [NSClassFromString(@"HonkMenuOverlay") class],
+                                                @selector(menuAction:)));
+            HonkAddRow(gHonkContent, HonkLabel(@"Uses the live follow-camera position. Save your location first if testing near obstacles.", UIFontWeightRegular, 12, UIColor.lightTextColor));
             HonkAddUnavailable(@"First-person camera", @"the game camera uses a follow rig; switching camera modes is not mapped");
             HonkAddUnavailable(@"Magic / free camera", @"creating and managing Unity cameras from native code is not implemented");
             HonkAddUnavailable(@"Teleport goose to camera", @"depends on the unavailable free-camera feature");
@@ -682,6 +686,7 @@ static void HonkBuildPage(NSInteger page) {
     switch (button.tag) {
         case 1: (void)HonkFeatures::publishCommand(gHonkState, HonkFeatures::kCommandSavePosition); break;
         case 2: (void)HonkFeatures::publishCommand(gHonkState, HonkFeatures::kCommandRestorePosition); break;
+        case 3: (void)HonkFeatures::publishCommand(gHonkState, HonkFeatures::kCommandTeleportToCamera); break;
         default: {
             NSInteger preset = button.tag - 100;
             if (preset >= 0 && preset < (NSInteger)(sizeof(kPresets) / sizeof(kPresets[0]))) {

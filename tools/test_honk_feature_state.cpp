@@ -93,5 +93,7 @@ int main() {
     }
     assert(HonkFeatures::publishCommand(&state, HonkFeatures::kCommandDestroySpawned));
     assert(__atomic_load_n(&state.command, __ATOMIC_ACQUIRE) == HonkFeatures::kCommandDestroySpawned);
-    assert(!HonkFeatures::publishCommand(&state, HonkFeatures::kCommandDestroySpawned + 1));
+    assert(HonkFeatures::publishCommand(&state, HonkFeatures::kCommandTeleportToCamera));
+    assert(__atomic_load_n(&state.command, __ATOMIC_ACQUIRE) == HonkFeatures::kCommandTeleportToCamera);
+    assert(!HonkFeatures::publishCommand(&state, HonkFeatures::kCommandTeleportToCamera + 1));
 }

@@ -37,6 +37,7 @@ class HonkMenuPortTests(unittest.TestCase):
         self.assertIn("Scene collider pairs are not yet enumerated safely", MENU)
         self.assertIn("NPC size (active people)", MENU)
         self.assertIn("Camera position: waiting for gameplay", MENU)
+        self.assertIn("Teleport goose to current camera", MENU)
         self.assertIn("Camera.main", MENU)
         self.assertIn("Transform.get_position", HELPER)
         for supported in ("Float / hold height", "Custom game speed", "Goose size",
@@ -137,7 +138,7 @@ class HonkMenuPortTests(unittest.TestCase):
         import build_components
         expected = {
             "follow-camera-distance", "disable-npc-shoo", "npc-size-all-active-bodies",
-            "npc-world-screen-markers", "spawn-and-replace-unity-primitive",
+            "npc-world-screen-markers", "teleport-to-current-camera", "spawn-and-replace-unity-primitive",
             "camera-position-readout", "destroy-last-primitive", "experimental-out-of-bounds-teleport",
         }
         self.assertTrue(expected.issubset(set(build_components.HONK_MENU_ACTIONS)))

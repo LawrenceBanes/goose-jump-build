@@ -139,7 +139,47 @@ goose_reloc_command_time_scale:
     b.ls    .Lspawn_primitive
     cmp     w9, #8
     b.eq    .Ldestroy_spawned
+    cmp     w9, #9
+    b.eq    .Lteleport_to_camera
     b       .Lafter_command
+
+.Lteleport_to_camera:
+    add     x10, x22, #HONK_CAMERA_POSITION_VALID_OFFSET
+    ldar    w10, [x10]
+    cbz     w10, .Lafter_command
+    add     x10, x22, #HONK_CAMERA_POSITION_X_OFFSET
+    ldar    w10, [x10]
+    fmov    s0, w10
+    add     x10, x22, #HONK_CAMERA_POSITION_Y_OFFSET
+    ldar    w10, [x10]
+    fmov    s1, w10
+    add     x10, x22, #HONK_CAMERA_POSITION_Z_OFFSET
+    ldar    w10, [x10]
+    fmov    s2, w10
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    fmov    w10, s1
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    fmov    w10, s2
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    mov     w10, #100
+    scvtf   s3, w10
+    fabs    s4, s0
+    fcmp    s4, s3
+    b.gt    .Lafter_command
+    fabs    s4, s1
+    fcmp    s4, s3
+    b.gt    .Lafter_command
+    fabs    s4, s2
+    fcmp    s4, s3
+    b.gt    .Lafter_command
+    b       .Lmove_to_position
 
 .Lsave_position:
     ldr     x0, [x19, #0x18]

@@ -219,6 +219,7 @@ static constexpr uint32_t kCommandCreateCapsule = 5;
 static constexpr uint32_t kCommandCreateCylinder = 6;
 static constexpr uint32_t kCommandCreateCube = 7;
 static constexpr uint32_t kCommandDestroySpawned = 8;
+static constexpr uint32_t kCommandTeleportToCamera = 9;
 static constexpr uint32_t kFloatEnabled = 1u << 1;
 static constexpr uint32_t kDisableNpcShoo = 1u << 2;
 static constexpr uint32_t kNpcTracking = 1u << 3;
@@ -270,7 +271,7 @@ inline bool publishTeleport(GooseJumpData *state, float x, float y, float z) {
 }
 
 inline bool publishCommand(GooseJumpData *state, uint32_t command) {
-    if (!state || command < kCommandSavePosition || command > kCommandDestroySpawned) return false;
+    if (!state || command < kCommandSavePosition || command > kCommandTeleportToCamera) return false;
     __atomic_store_n(&state->command, command, __ATOMIC_RELEASE);
     return true;
 }
