@@ -4,13 +4,39 @@
 #include <cstdint>
 
 int main() {
-    static_assert(sizeof(GooseJumpData) == 80);
+    static_assert(sizeof(GooseJumpData) == 128);
     GooseJumpData state{};
     assert(!HonkFeatures::jumpEnabled(&state));
     HonkFeatures::setJumpEnabled(&state, true);
     assert(HonkFeatures::jumpEnabled(&state));
     HonkFeatures::setJumpEnabled(&state, false);
     assert(!HonkFeatures::jumpEnabled(&state));
+
+    assert(!HonkFeatures::hoverEnabled(&state));
+    HonkFeatures::setHoverEnabled(&state, true);
+    assert(HonkFeatures::hoverEnabled(&state));
+    HonkFeatures::setHoverEnabled(&state, false);
+    assert(!HonkFeatures::hoverEnabled(&state));
+
+    HonkFeatures::setTimeScale(&state, 1.25f);
+    assert(std::fabs(HonkFeatures::timeScale(&state) - 1.25f) < 0.0001f);
+    HonkFeatures::setTimeScale(&state, 0.0f);
+    assert(std::fabs(HonkFeatures::timeScale(&state) - HonkFeatures::kMinimumTimeScale) < 0.0001f);
+    HonkFeatures::setTimeScale(&state, 7.0f);
+    assert(std::fabs(HonkFeatures::timeScale(&state) - HonkFeatures::kMaximumTimeScale) < 0.0001f);
+    HonkFeatures::setTimeScale(&state, NAN);
+    assert(std::fabs(HonkFeatures::timeScale(&state) - 1.0f) < 0.0001f);
+    HonkFeatures::setTimeScaleEnabled(&state, true);
+    assert(HonkFeatures::timeScaleEnabled(&state));
+
+    HonkFeatures::setSizeFactor(&state, 1.5f);
+    assert(std::fabs(HonkFeatures::sizeFactor(&state) - 1.5f) < 0.0001f);
+    HonkFeatures::setSizeFactor(&state, 0.1f);
+    assert(std::fabs(HonkFeatures::sizeFactor(&state) - HonkFeatures::kMinimumSizeFactor) < 0.0001f);
+    HonkFeatures::setSizeFactor(&state, 4.0f);
+    assert(std::fabs(HonkFeatures::sizeFactor(&state) - HonkFeatures::kMaximumSizeFactor) < 0.0001f);
+    HonkFeatures::setSizeFactor(&state, INFINITY);
+    assert(std::fabs(HonkFeatures::sizeFactor(&state) - 1.0f) < 0.0001f);
 
     HonkFeatures::setSpeedFactor(&state, 1.75f);
     assert(std::fabs(HonkFeatures::speedFactor(&state) - 1.75f) < 0.0001f);

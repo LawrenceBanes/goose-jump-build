@@ -95,7 +95,7 @@ def main() -> None:
         "host_architecture": platform.machine(),
         "jump_impulse": args.impulse,
         "native_honk_menu": True,
-        "honk_menu_actions": ["jump-toggle", "jump-impulse", "horizontal-speed", "save-position", "restore-position", "area-teleport", "practice-teleport"],
+        "honk_menu_actions": ["jump-toggle", "jump-impulse", "horizontal-speed", "float-hold-height", "game-speed", "goose-size", "save-position", "restore-position", "area-teleport", "practice-teleport"],
         "helper_file": helper_path.name,
         "helper_sha256": digest(helper_path),
         "helper_size": len(helper),

@@ -102,6 +102,10 @@ class PatcherTests(unittest.TestCase):
             build.BASE + 0x1E16108,  # Rigidbody.get_position
             build.BASE + 0x1E16454,  # Rigidbody.MovePosition
             build.BASE + 0x1DE9FE0,  # Time.get_timeScale
+            build.BASE + 0x1DEA040,  # Time.set_timeScale
+            build.BASE + 0x1DBA100,  # Component.get_transform
+            build.BASE + 0x1DEB834,  # Transform.get_localScale
+            build.BASE + 0x1DEB8E0,  # Transform.set_localScale
         }
         self.assertTrue(required.issubset(starts))
         with tempfile.TemporaryDirectory() as temp:

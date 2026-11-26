@@ -62,6 +62,17 @@ RELOCS = {
     "goose_reloc_rb_get_velocity": ("bl", BASE + 0x1E15850, None),
     "goose_reloc_rb_get_velocity_maintain": ("bl", BASE + 0x1E15850, None),
     "goose_reloc_rb_set_velocity": ("bl", BASE + 0x1E158FC, None),
+    "goose_reloc_hover_kinematic": ("bl", BASE + 0x1E15DA8, None),
+    "goose_reloc_hover_get_velocity": ("bl", BASE + 0x1E15850, None),
+    "goose_reloc_hover_set_velocity": ("bl", BASE + 0x1E158FC, None),
+    "goose_reloc_component_transform": ("bl", BASE + 0x1DBA100, None),
+    "goose_reloc_scale_component_transform": ("bl", BASE + 0x1DBA100, None),
+    "goose_reloc_transform_get_scale": ("bl", BASE + 0x1DEB834, None),
+    "goose_reloc_transform_set_scale": ("bl", BASE + 0x1DEB8E0, None),
+    "goose_reloc_rate_get_time_scale": ("bl", BASE + 0x1DE9FE0, None),
+    "goose_reloc_set_time_scale": ("bl", BASE + 0x1DEA040, None),
+    "goose_reloc_restore_get_time_scale": ("bl", BASE + 0x1DE9FE0, None),
+    "goose_reloc_restore_time_scale": ("bl", BASE + 0x1DEA040, None),
 }
 
 

@@ -43,6 +43,8 @@ static UIStackView *gHonkContent;
 static UIScrollView *gHonkScroll;
 static UILabel *gHonkImpulseValue;
 static UILabel *gHonkSpeedValue;
+static UILabel *gHonkTimeScaleValue;
+static UILabel *gHonkSizeValue;
 static NSTimer *gHonkRefresh;
 static NSInteger gSelectedPage = 0;
 
@@ -150,12 +152,18 @@ static UISlider *HonkSlider(UIStackView *stack, NSString *title, float min, floa
                action:@selector(settingChanged:) forControlEvents:UIControlEventValueChanged];
     [row addArrangedSubview:label];
     [row addArrangedSubview:slider];
-    valueLabel.text = tag == 2 ? [NSString stringWithFormat:@"%.1f units/s", value]
-                              : [NSString stringWithFormat:@"%.0f%%", value * 100.0f];
+    switch (tag) {
+        case 2: valueLabel.text = [NSString stringWithFormat:@"%.1f units/s", value]; break;
+        case 6: valueLabel.text = [NSString stringWithFormat:@"%.2fx", value]; break;
+        case 7: valueLabel.text = [NSString stringWithFormat:@"%.0f%%", value * 100.0f]; break;
+        default: valueLabel.text = [NSString stringWithFormat:@"%.0f%%", value * 100.0f]; break;
+    }
     [row addArrangedSubview:valueLabel];
     HonkAddRow(stack, row);
     if (tag == 2) gHonkImpulseValue = valueLabel;
     if (tag == 3) gHonkSpeedValue = valueLabel;
+    if (tag == 6) gHonkTimeScaleValue = valueLabel;
+    if (tag == 7) gHonkSizeValue = valueLabel;
     return slider;
 }
 
@@ -206,7 +214,38 @@ static void HonkBuildMovementPage(void) {
     UIButton *restore = HonkButton(@"Restore saved position", 2, [NSClassFromString(@"HonkMenuOverlay") class], @selector(menuAction:));
     HonkAddRow(gHonkContent, save);
     HonkAddRow(gHonkContent, restore);
-    HonkAddUnavailable(@"Noclip / floating", @"safe goose-collider enumeration and restoration are not yet verified");
+
+    UISwitch *hover = [[UISwitch alloc] init];
+    hover.tag = 4;
+    hover.on = HonkFeatures::hoverEnabled(gHonkState);
+    [hover addTarget:[NSClassFromString(@"HonkMenuOverlay") class]
+              action:@selector(settingChanged:) forControlEvents:UIControlEventValueChanged];
+    UIStackView *hoverRow = [[UIStackView alloc] init];
+    hoverRow.axis = UILayoutConstraintAxisHorizontal;
+    hoverRow.alignment = UIStackViewAlignmentCenter;
+    hoverRow.distribution = UIStackViewDistributionEqualSpacing;
+    [hoverRow addArrangedSubview:HonkLabel(@"Float / hold height", UIFontWeightSemibold, 15, UIColor.whiteColor)];
+    [hoverRow addArrangedSubview:hover];
+    HonkAddRow(gHonkContent, hoverRow);
+    HonkAddRow(gHonkContent, HonkLabel(@"Holds vertical Rigidbody velocity at zero. Collision stays enabled; this is not noclip. Automatically yields while swimming or dragging.", UIFontWeightRegular, 12, UIColor.lightTextColor));
+
+    UISwitch *timeEnabled = [[UISwitch alloc] init];
+    timeEnabled.tag = 5;
+    timeEnabled.on = HonkFeatures::timeScaleEnabled(gHonkState);
+    [timeEnabled addTarget:[NSClassFromString(@"HonkMenuOverlay") class]
+                    action:@selector(settingChanged:) forControlEvents:UIControlEventValueChanged];
+    UIStackView *timeRow = [[UIStackView alloc] init];
+    timeRow.axis = UILayoutConstraintAxisHorizontal;
+    timeRow.alignment = UIStackViewAlignmentCenter;
+    timeRow.distribution = UIStackViewDistributionEqualSpacing;
+    [timeRow addArrangedSubview:HonkLabel(@"Custom game speed", UIFontWeightSemibold, 15, UIColor.whiteColor)];
+    [timeRow addArrangedSubview:timeEnabled];
+    HonkAddRow(gHonkContent, timeRow);
+    HonkSlider(gHonkContent, @"Game speed", HonkFeatures::kMinimumTimeScale,
+               HonkFeatures::kMaximumTimeScale, HonkFeatures::timeScale(gHonkState), 6);
+    HonkSlider(gHonkContent, @"Goose size", HonkFeatures::kMinimumSizeFactor,
+               HonkFeatures::kMaximumSizeFactor, HonkFeatures::sizeFactor(gHonkState), 7);
+    HonkAddUnavailable(@"Noclip", @"this build exposes no verified reversible Collider setter; world collision remains enabled");
 }
 
 static void HonkBuildTeleportPage(void) {
@@ -273,9 +312,17 @@ static void HonkBuildPage(NSInteger page) {
     NSNumber *jumpPreference = [defaults objectForKey:@"HonkMenu.JumpEnabled"];
     NSNumber *impulsePreference = [defaults objectForKey:@"HonkMenu.JumpImpulse"];
     NSNumber *speedPreference = [defaults objectForKey:@"HonkMenu.SpeedFactor"];
+    NSNumber *hoverPreference = [defaults objectForKey:@"HonkMenu.FloatEnabled"];
+    NSNumber *timeEnabledPreference = [defaults objectForKey:@"HonkMenu.TimeScaleEnabled"];
+    NSNumber *timeScalePreference = [defaults objectForKey:@"HonkMenu.TimeScale"];
+    NSNumber *sizePreference = [defaults objectForKey:@"HonkMenu.SizeFactor"];
     HonkFeatures::setJumpEnabled(gHonkState, jumpPreference ? jumpPreference.boolValue : true);
     HonkFeatures::setJumpImpulse(gHonkState, impulsePreference ? impulsePreference.floatValue : HonkReadJumpImpulse());
     HonkFeatures::setSpeedFactor(gHonkState, speedPreference ? speedPreference.floatValue : 1.0f);
+    HonkFeatures::setHoverEnabled(gHonkState, hoverPreference ? hoverPreference.boolValue : false);
+    HonkFeatures::setTimeScale(gHonkState, timeScalePreference ? timeScalePreference.floatValue : 1.0f);
+    HonkFeatures::setTimeScaleEnabled(gHonkState, timeEnabledPreference ? timeEnabledPreference.boolValue : false);
+    HonkFeatures::setSizeFactor(gHonkState, sizePreference ? sizePreference.floatValue : 1.0f);
 
     if (gHonkRoot && gHonkRoot.superview == root) {
         [self refresh];
@@ -421,8 +468,20 @@ static void HonkBuildPage(NSInteger page) {
     if (!gHonkState) return;
     if ([sender isKindOfClass:UISwitch.class]) {
         const BOOL enabled = ((UISwitch *)sender).on;
-        HonkFeatures::setJumpEnabled(gHonkState, enabled);
-        [NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"HonkMenu.JumpEnabled"];
+        switch (((UISwitch *)sender).tag) {
+            case 1:
+                HonkFeatures::setJumpEnabled(gHonkState, enabled);
+                [NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"HonkMenu.JumpEnabled"];
+                break;
+            case 4:
+                HonkFeatures::setHoverEnabled(gHonkState, enabled);
+                [NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"HonkMenu.FloatEnabled"];
+                break;
+            case 5:
+                HonkFeatures::setTimeScaleEnabled(gHonkState, enabled);
+                [NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"HonkMenu.TimeScaleEnabled"];
+                break;
+        }
     } else if ([sender isKindOfClass:UISlider.class]) {
         UISlider *slider = (UISlider *)sender;
         if (slider.tag == 2) {
@@ -433,6 +492,14 @@ static void HonkBuildPage(NSInteger page) {
             HonkFeatures::setSpeedFactor(gHonkState, slider.value);
             gHonkSpeedValue.text = [NSString stringWithFormat:@"%.0f%%", slider.value * 100.0f];
             [NSUserDefaults.standardUserDefaults setFloat:slider.value forKey:@"HonkMenu.SpeedFactor"];
+        } else if (slider.tag == 6) {
+            HonkFeatures::setTimeScale(gHonkState, slider.value);
+            gHonkTimeScaleValue.text = [NSString stringWithFormat:@"%.2fx", slider.value];
+            [NSUserDefaults.standardUserDefaults setFloat:slider.value forKey:@"HonkMenu.TimeScale"];
+        } else if (slider.tag == 7) {
+            HonkFeatures::setSizeFactor(gHonkState, slider.value);
+            gHonkSizeValue.text = [NSString stringWithFormat:@"%.0f%%", slider.value * 100.0f];
+            [NSUserDefaults.standardUserDefaults setFloat:slider.value forKey:@"HonkMenu.SizeFactor"];
         }
     }
 }

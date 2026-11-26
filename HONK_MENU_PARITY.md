@@ -9,17 +9,17 @@
 
 ## Feature inventory
 
-| Upstream feature | Actual behavior observed in source | Classification for iOS | v0.3 native port status |
+| Upstream feature | Actual behavior observed in source | Classification for iOS | Honk-Menu iOS v0.2.0 status |
 |---|---|---|---|
 | Main menu, categories, shortcuts, credits | Unity IMGUI windows and keyboard shortcut handling | Directly adaptable UI; implementation must be native UIKit | Native touch menu shell; Movement, Teleport, Camera, Goose/NPC, World and Experimental pages. Shows explicit unavailability for incomplete groups. |
-| Jump and jump strength | Toggles jump input and uses the Goose Rigidbody path | Requires native IL2CPP movement hook | Implemented by v0.2 hook; v0.3 adds an enable switch and impulse slider. |
+| Jump and jump strength | Toggles jump input and uses the Goose Rigidbody path | Requires native IL2CPP movement hook | Implemented by the jump hook; retained with enable switch and impulse slider. |
 | Goose speed | Repeatedly changes `Mover.currentSpeed` while a keyboard toggle is active | Requires native movement hook | Implemented as bounded horizontal velocity scaling at the verified Mover physics hook. |
 | Save/load goose position | Saves the goose Transform position and sets it back later | Requires native Rigidbody/Transform calls on the game thread | Implemented with verified `Rigidbody.get_position` and `Rigidbody.MovePosition` method pointers; runtime remains device-unverified. |
 | Area teleport destinations | Calls `GameObject.Find("Goose").transform.position = ...` using eight coordinates | Requires native movement hook; exact game thread and coordinate validity matter | Eight area destinations are sent as bounded requests and applied through Rigidbody.MovePosition. |
 | Speedrun clip destinations | Directly assigns goose Transform position for six named practice locations | Requires native movement hook | Six clip destinations are implemented through the same validated teleport dispatcher. |
 | Fun/out-of-bounds destinations | Directly assigns Transform positions, several above/outside the map | Requires native movement hook and carries recovery risk | Nine destinations are available in the scrollable Teleport page with an explicit warning. |
-| Noclip / floating | Toggles noclip, disables Goose colliders, and changes movement based on keyboard/controller input | Requires verified collider enumeration, original-state capture/restore and a game-thread movement path | Not enabled yet. The menu marks it unavailable until collider discovery and restoration are verified; no global collision setting is changed. |
-| Goose color / P2 skin / player icon | Mutates Goose materials, mesh state and a named scene GameObject/SpriteRenderer | Requires IL2CPP renderer/object mapping and resource lifecycle handling | Not implemented; shown as unavailable with reason in parity documentation. |
+| Noclip / floating | Toggles noclip, disables Goose colliders, and changes movement based on keyboard/controller input | Requires verified collider enumeration, original-state capture/restore and a game-thread movement path | True noclip remains unavailable: this exact build has no verified reversible Collider setter. A separate Float/Hold Height toggle is implemented; it zeroes only Goose vertical velocity on the physics hook, preserves horizontal velocity and collision, and yields while swimming or dragging. |
+| Goose color / P2 skin / player icon | Mutates Goose materials, mesh state and a named scene GameObject/SpriteRenderer | Requires IL2CPP renderer/object mapping and resource lifecycle handling | Goose resize is implemented through verified Transform localScale access with a captured baseline and 0.5×–2× bounded slider. Goose color, P2 skin and player icon remain unavailable. |
 | Disable shoo | Finds named NPC Brain objects and writes `timeAllowedToShooAgain` | Requires verified NPC references/layout and restoration across scenes | Not implemented; no guessed NPC offsets are used. |
 | NPC tracking / ESP | Finds named NPC objects and projects world positions with `Camera.main`/IMGUI | Requires native object lookup, camera calls and render-thread overlay | Not implemented; requires verified object and camera access. |
 | NPC/Goose resize and player swap | Finds named objects and changes local scale or position | Requires game-object access plus original transform capture | Not implemented. |
@@ -28,8 +28,8 @@
 | Task completion | Writes a list of task IDs through game task APIs; README warns about achievement effects | Requires verified progression state and save/achievement semantics | Not implemented; excluded to avoid damaging progress or achievement state. |
 | Clone/destroy people or Goose | Creates/copies Unity GameObjects and destroys objects | Requires allocation, component cloning and ownership-safe teardown | Not implemented. |
 | Wireframe / collider visualization | Changes renderer mode or draws collider boundaries through Unity GUI | Requires graphics/render-thread integration beyond the movement hook | Not implemented. |
-| Free camera / first-person camera / goose-to-camera | Creates a Unity camera, adds mouse-look components, hides Goose meshes and handles desktop cursor/input | Mouse, keyboard, cursor locking and managed component creation are unsupported on this iOS path | Not implemented. A UIKit camera control needs a verified native camera rig and separate render-phase hooks. |
-| Game speed / slow motion | Changes Unity time scale from desktop keyboard controls | Requires game-thread Time API call and coordinated input/physics behavior | Not implemented; changing global time scale is intentionally kept out of the initial native menu. |
+| Free camera / first-person camera / goose-to-camera | Creates a Unity camera, adds mouse-look components, hides Goose meshes and handles desktop cursor/input | Mouse, keyboard, cursor locking and managed component creation are unsupported on this iOS path | Not implemented. A UIKit camera control still needs a verified camera rig and render-phase lifecycle hook. |
+| Game speed / slow motion | Changes Unity time scale from desktop keyboard controls | Requires game-thread Time API call and coordinated input/physics behavior | Implemented as an opt-in 0.5×–2× Time.timeScale slider, applied only from the physics thread; it skips paused state and resets to 1× when disabled. This is a global game-rate change. |
 | Random bell minigame | Moves the golden bell to a randomized world position and draws a marker | Requires object lookup, random placement and HUD rendering | Not implemented. |
 | Multiplayer Goose-to-Goose actions | Moves Goose/GooseB or bell between players | Depends on the multiplayer scene and two-player objects | Not implemented; current target build is single-player and no second Goose pointer is verified. |
 
@@ -41,6 +41,13 @@
 - Position reads and teleports use verified methods from the IL2CPP 24.1 method map: `Rigidbody.get_position` RVA `0x1e16108`, `Rigidbody.MovePosition` RVA `0x1e16454`, and `Rigidbody.set_velocity` RVA `0x1e158fc`. Addresses are patched as same-image relative branches and inherit ASLR slide with the game image.
 - Shared data remains in the already-pinned zero-fill state page. It now contains jump, speed, and teleport request state. A command is consumed on the physics thread, validates finite map-bounded coordinates, and clears momentum after an arrival. Scene/player replacement clears pending teleport/save state.
 - The menu's full-screen container returns `nil` from UIKit hit testing outside its launcher or visible panel. Multitouch stays enabled, and the separate Jump button remains in place.
+
+## Additional native features in v0.2 source
+
+- Float / Hold Height locks only the Goose Rigidbody Y velocity to zero, leaves X/Z untouched, and does not disable collision or alter Rigidbody gravity configuration. It yields while the Goose is swimming, dragging, or kinematic.
+- Game speed is an opt-in, finite 0.5×–2× `Time.timeScale` override. Reads/writes occur from the verified `Mover.FixedUpdate` hook, never UIKit. When disabled, the helper restores 1× after gameplay resumes; it does not call Unity while time is paused.
+- Goose size captures the Goose Transform's baseline local scale once per Goose instance and derives every new scale from that baseline. It does not compound per physics frame and returns to the captured scale at 100%.
+- These three controls are source-implemented and unit/static validated. Their effects require testing in the new iPhone build.
 
 ## Validation boundary
 

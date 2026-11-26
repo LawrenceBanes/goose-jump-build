@@ -11,3 +11,7 @@ Download the `goose-jump-components-<commit>` artifact from a successful run. Ve
 ## Final IPA packaging boundary
 
 The public workflow does not package or publish a game IPA. Local packaging requires the original IPA with SHA-256 `70b1cc33d2f6f753113f9801a0ffffa27245796676052121968d26c355f78593`, an extracted matching executable/metadata, the public CI component artifact, and the hash-pinned patcher. Publish the completed IPA only to the existing private `goose-jump-ios` release, after full archive validation.
+
+## Honk-Menu native controls
+
+The UIKit menu and ARM64 physics helper include the existing jump, movement-speed and teleport tools plus source-implemented Float/Hold Height, optional 0.5×–2× game speed, and 0.5×–2× Goose size controls. These remain private-game runtime modifications: public CI only builds the redistributable dylib/helper and cannot verify gameplay. The parity matrix distinguishes available features from unimplemented upstream tools.

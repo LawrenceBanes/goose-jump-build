@@ -243,6 +243,191 @@ goose_reloc_teleport_clear_velocity:
     .inst   0x94000000              // BL Rigidbody.set_velocity
 
 .Lafter_command:
+    // Optional global game-rate override. Never change Time from UIKit. Do not
+    // touch a paused game; after unpause, an off toggle restores Unity's normal
+    // rate and an on toggle applies the bounded requested rate.
+    add     x10, x22, #HONK_TIME_SCALE_ENABLED_OFFSET
+    ldar    w10, [x10]
+    cbz     w10, .Lrestore_time_scale
+    mov     x0, xzr
+goose_reloc_rate_get_time_scale:
+    .inst   0x94000000              // BL UnityEngine.Time.get_timeScale
+    fmov    s1, wzr
+    fcmp    s0, s1
+    b.le    .Lhover
+    add     x10, x22, #HONK_TIME_SCALE_OFFSET
+    ldar    w10, [x10]
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lhover
+    fmov    s0, w10
+    fmov    s1, #0.5
+    fcmp    s0, s1
+    b.lt    .Lhover
+    fmov    s1, #2.0
+    fcmp    s0, s1
+    b.gt    .Lhover
+    mov     w10, #1
+    add     x11, x22, #HONK_TIME_SCALE_APPLIED_OFFSET
+    stlr    w10, [x11]
+    mov     x0, xzr
+goose_reloc_set_time_scale:
+    .inst   0x94000000              // BL UnityEngine.Time.set_timeScale
+    b       .Lhover
+.Lrestore_time_scale:
+    add     x10, x22, #HONK_TIME_SCALE_APPLIED_OFFSET
+    ldar    w10, [x10]
+    cbz     w10, .Lhover
+    mov     x0, xzr
+goose_reloc_restore_get_time_scale:
+    .inst   0x94000000              // BL UnityEngine.Time.get_timeScale
+    fmov    s1, wzr
+    fcmp    s0, s1
+    b.le    .Lhover
+    fmov    s0, #1.0
+    mov     x0, xzr
+goose_reloc_restore_time_scale:
+    .inst   0x94000000              // BL UnityEngine.Time.set_timeScale
+    add     x10, x22, #HONK_TIME_SCALE_APPLIED_OFFSET
+    stlr    wzr, [x10]
+
+.Lhover:
+    // Float mode holds the goose at its current height without disabling
+    // colliders or changing gravity configuration. Swimming and dragging are
+    // excluded; horizontal velocity remains exactly as the game computed it.
+    add     x10, x22, #HONK_HOVER_ENABLED_OFFSET
+    ldar    w10, [x10]
+    cbz     w10, .Lscale
+    cbz     x20, .Lscale
+    ldrb    w9, [x20, #0x250]
+    cbnz    w9, .Lscale
+    ldrb    w9, [x20, #0x14c]
+    cbnz    w9, .Lscale
+    ldr     x9, [x20, #0x58]
+    cbz     x9, .Lhover_draggable
+    ldrb    w10, [x9, #0x38]
+    cbnz    w10, .Lscale
+.Lhover_draggable:
+    ldr     x9, [x19, #0x18]
+    cbz     x9, .Lscale
+    mov     x0, x9
+    mov     x1, xzr
+goose_reloc_hover_kinematic:
+    .inst   0x94000000              // BL Rigidbody.get_isKinematic
+    cbnz    w0, .Lscale
+    ldr     x0, [x19, #0x18]
+    mov     x1, xzr
+goose_reloc_hover_get_velocity:
+    .inst   0x94000000              // BL Rigidbody.get_velocity
+    fmov    w9, s0
+    ubfx    w10, w9, #23, #8
+    cmp     w10, #255
+    b.eq    .Lscale
+    fmov    w9, s2
+    ubfx    w10, w9, #23, #8
+    cmp     w10, #255
+    b.eq    .Lscale
+    str     s0, [sp, #0]
+    str     s2, [sp, #8]
+    fmov    s1, wzr
+    ldr     x0, [x19, #0x18]
+    ldr     s0, [sp, #0]
+    ldr     s2, [sp, #8]
+    mov     x1, xzr
+goose_reloc_hover_set_velocity:
+    .inst   0x94000000              // BL Rigidbody.set_velocity
+
+.Lscale:
+    // Scale is always derived from the Goose's captured baseline, never from
+    // the previously scaled value, so repeated physics ticks cannot compound.
+    add     x10, x22, #HONK_SIZE_FACTOR_OFFSET
+    ldar    w10, [x10]
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lscale_end
+    fmov    s4, w10
+    str     s4, [sp, #20]
+    fmov    s3, #1.0
+    fcmp    s4, s3
+    b.eq    .Lscale_check_captured
+    fmov    s3, #0.5
+    fcmp    s4, s3
+    b.lt    .Lscale_end
+    fmov    s3, #2.0
+    fcmp    s4, s3
+    b.gt    .Lscale_end
+.Lscale_check_captured:
+    ldr     w10, [x22, #HONK_SCALE_CAPTURED_OFFSET]
+    cbz     w10, .Lscale_end
+    ldr     x9, [x19, #0x10]         // Mover.goose
+    cbz     x9, .Lscale_end
+    str     x9, [sp, #24]
+    ldr     x10, [x22, #HONK_SCALE_GOOSE_OFFSET]
+    cmp     x10, x9
+    b.ne    .Lcapture_scale
+    ldr     w10, [x22, #HONK_SCALE_CAPTURED_OFFSET]
+    cbnz    w10, .Lapply_scale
+.Lcapture_scale:
+    mov     x0, x9
+    mov     x1, xzr
+goose_reloc_component_transform:
+    .inst   0x94000000              // BL Component.get_transform
+    cbz     x0, .Lscale_end
+    str     x0, [sp, #16]
+    mov     x1, xzr
+goose_reloc_transform_get_scale:
+    .inst   0x94000000              // BL Transform.get_localScale
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lscale_end
+    fmov    w10, s1
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lscale_end
+    fmov    w10, s2
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lscale_end
+    str     s0, [x22, #HONK_BASE_SCALE_X_OFFSET]
+    str     s1, [x22, #HONK_BASE_SCALE_Y_OFFSET]
+    str     s2, [x22, #HONK_BASE_SCALE_Z_OFFSET]
+    ldr     x9, [sp, #24]
+    str     x9, [x22, #HONK_SCALE_GOOSE_OFFSET]
+    mov     w10, #1
+    add     x11, x22, #HONK_SCALE_CAPTURED_OFFSET
+    stlr    w10, [x11]
+    ldr     x0, [sp, #16]
+.Lapply_scale:
+    ldr     s0, [x22, #HONK_BASE_SCALE_X_OFFSET]
+    ldr     s1, [x22, #HONK_BASE_SCALE_Y_OFFSET]
+    ldr     s2, [x22, #HONK_BASE_SCALE_Z_OFFSET]
+    ldr     s4, [sp, #20]
+    fmul    s0, s0, s4
+    fmul    s1, s1, s4
+    fmul    s2, s2, s4
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lscale_end
+    fmov    w10, s1
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lscale_end
+    fmov    w10, s2
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lscale_end
+    ldr     x9, [x22, #HONK_SCALE_GOOSE_OFFSET]
+    mov     x0, x9
+    mov     x1, xzr
+goose_reloc_scale_component_transform:
+    .inst   0x94000000              // BL Component.get_transform
+    cbz     x0, .Lscale_end
+    mov     x1, xzr
+goose_reloc_transform_set_scale:
+    .inst   0x94000000              // BL Transform.set_localScale
+.Lscale_end:
     ldar    x9, [x22, #GOOSE_JUMP_PENDING_OFFSET]
     cbz     w9, .Lmaybe_maintain_cap
     add     x10, x22, #HONK_FLAGS_OFFSET

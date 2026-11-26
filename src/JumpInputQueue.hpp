@@ -18,6 +18,16 @@
 #define HONK_SAVED_Z_OFFSET 68
 #define HONK_SPEED_FACTOR_OFFSET 72
 #define HONK_SAVED_VALID_OFFSET 76
+#define HONK_TIME_SCALE_OFFSET 80
+#define HONK_SIZE_FACTOR_OFFSET 84
+#define HONK_TIME_SCALE_ENABLED_OFFSET 88
+#define HONK_HOVER_ENABLED_OFFSET 92
+#define HONK_SCALE_CAPTURED_OFFSET 96
+#define HONK_TIME_SCALE_APPLIED_OFFSET 100
+#define HONK_SCALE_GOOSE_OFFSET 104
+#define HONK_BASE_SCALE_X_OFFSET 112
+#define HONK_BASE_SCALE_Y_OFFSET 116
+#define HONK_BASE_SCALE_Z_OFFSET 120
 
 #ifndef __ASSEMBLER__
 #include <math.h>
@@ -43,6 +53,16 @@ typedef struct GooseJumpData {
     volatile uint32_t savedZBits;
     volatile uint32_t speedFactorBits;
     volatile uint32_t savedPositionValid;
+    volatile uint32_t timeScaleBits;
+    volatile uint32_t sizeFactorBits;
+    volatile uint32_t timeScaleEnabled;
+    volatile uint32_t hoverEnabled;
+    volatile uint32_t scaleCaptured;
+    volatile uint32_t timeScaleApplied;
+    uintptr_t scaleGoose;
+    float baseScaleX;
+    float baseScaleY;
+    float baseScaleZ;
 } GooseJumpData;
 
 static_assert(offsetof(GooseJumpData, pendingState) == GOOSE_JUMP_PENDING_OFFSET);
@@ -62,6 +82,16 @@ static_assert(offsetof(GooseJumpData, savedYBits) == HONK_SAVED_Y_OFFSET);
 static_assert(offsetof(GooseJumpData, savedZBits) == HONK_SAVED_Z_OFFSET);
 static_assert(offsetof(GooseJumpData, speedFactorBits) == HONK_SPEED_FACTOR_OFFSET);
 static_assert(offsetof(GooseJumpData, savedPositionValid) == HONK_SAVED_VALID_OFFSET);
+static_assert(offsetof(GooseJumpData, timeScaleBits) == HONK_TIME_SCALE_OFFSET);
+static_assert(offsetof(GooseJumpData, sizeFactorBits) == HONK_SIZE_FACTOR_OFFSET);
+static_assert(offsetof(GooseJumpData, hoverEnabled) == HONK_HOVER_ENABLED_OFFSET);
+static_assert(offsetof(GooseJumpData, scaleCaptured) == HONK_SCALE_CAPTURED_OFFSET);
+static_assert(offsetof(GooseJumpData, timeScaleEnabled) == HONK_TIME_SCALE_ENABLED_OFFSET);
+static_assert(offsetof(GooseJumpData, timeScaleApplied) == HONK_TIME_SCALE_APPLIED_OFFSET);
+static_assert(offsetof(GooseJumpData, scaleGoose) == HONK_SCALE_GOOSE_OFFSET);
+static_assert(offsetof(GooseJumpData, baseScaleX) == HONK_BASE_SCALE_X_OFFSET);
+static_assert(offsetof(GooseJumpData, baseScaleY) == HONK_BASE_SCALE_Y_OFFSET);
+static_assert(offsetof(GooseJumpData, baseScaleZ) == HONK_BASE_SCALE_Z_OFFSET);
 
 namespace GooseJumpInput {
 
@@ -134,11 +164,16 @@ static constexpr uint32_t kCommandNone = 0;
 static constexpr uint32_t kCommandSavePosition = 1;
 static constexpr uint32_t kCommandRestorePosition = 2;
 static constexpr uint32_t kCommandTeleport = 3;
+static constexpr uint32_t kFloatEnabled = 1u << 1;
 static constexpr float kMinimumSpeedFactor = 0.5f;
 static constexpr float kMaximumSpeedFactor = 3.0f;
 static constexpr float kMinimumJumpImpulse = 0.5f;
 static constexpr float kMaximumJumpImpulse = 12.0f;
 static constexpr float kMaximumTeleportCoordinate = 100.0f;
+static constexpr float kMinimumTimeScale = 0.5f;
+static constexpr float kMaximumTimeScale = 2.0f;
+static constexpr float kMinimumSizeFactor = 0.5f;
+static constexpr float kMaximumSizeFactor = 2.0f;
 
 inline bool finiteAndInRange(float value, float absoluteLimit) {
     return isfinite(value) && value >= -absoluteLimit && value <= absoluteLimit;
@@ -177,6 +212,53 @@ inline bool publishCommand(GooseJumpData *state, uint32_t command) {
     if (!state || command < kCommandSavePosition || command > kCommandTeleport) return false;
     __atomic_store_n(&state->command, command, __ATOMIC_RELEASE);
     return true;
+}
+
+inline bool hoverEnabled(const GooseJumpData *state) {
+    return state && __atomic_load_n(&state->hoverEnabled, __ATOMIC_ACQUIRE) != 0;
+}
+
+inline void setHoverEnabled(GooseJumpData *state, bool enabled) {
+    if (state) __atomic_store_n(&state->hoverEnabled, enabled ? 1u : 0u, __ATOMIC_RELEASE);
+}
+
+inline bool timeScaleEnabled(const GooseJumpData *state) {
+    return state && __atomic_load_n(&state->timeScaleEnabled, __ATOMIC_ACQUIRE) != 0;
+}
+
+inline void setTimeScaleEnabled(GooseJumpData *state, bool enabled) {
+    if (state) __atomic_store_n(&state->timeScaleEnabled, enabled ? 1u : 0u, __ATOMIC_RELEASE);
+}
+
+inline float boundedFactor(float value, float low, float high, float fallback) {
+    if (!isfinite(value)) return fallback;
+    if (value < low) return low;
+    if (value > high) return high;
+    return value;
+}
+
+inline float timeScale(const GooseJumpData *state) {
+    if (!state) return 1.0f;
+    return boundedFactor(GooseJumpInput::bitsFloat(__atomic_load_n(&state->timeScaleBits, __ATOMIC_ACQUIRE)),
+                         kMinimumTimeScale, kMaximumTimeScale, 1.0f);
+}
+
+inline void setTimeScale(GooseJumpData *state, float value) {
+    if (!state) return;
+    const float bounded = boundedFactor(value, kMinimumTimeScale, kMaximumTimeScale, 1.0f);
+    __atomic_store_n(&state->timeScaleBits, GooseJumpInput::floatBits(bounded), __ATOMIC_RELEASE);
+}
+
+inline float sizeFactor(const GooseJumpData *state) {
+    if (!state) return 1.0f;
+    return boundedFactor(GooseJumpInput::bitsFloat(__atomic_load_n(&state->sizeFactorBits, __ATOMIC_ACQUIRE)),
+                         kMinimumSizeFactor, kMaximumSizeFactor, 1.0f);
+}
+
+inline void setSizeFactor(GooseJumpData *state, float value) {
+    if (!state) return;
+    const float bounded = boundedFactor(value, kMinimumSizeFactor, kMaximumSizeFactor, 1.0f);
+    __atomic_store_n(&state->sizeFactorBits, GooseJumpInput::floatBits(bounded), __ATOMIC_RELEASE);
 }
 
 } // namespace HonkFeatures

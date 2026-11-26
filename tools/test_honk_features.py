@@ -31,7 +31,13 @@ class HonkMenuPortTests(unittest.TestCase):
                         "Jump impulse", "Starting area", "Geesus clip"):
             self.assertIn(control, MENU)
         self.assertIn("Unavailable in this build", MENU)
-        self.assertIn("safe goose-collider enumeration and restoration are not yet verified", MENU)
+        self.assertIn("Collision stays enabled; this is not noclip", MENU)
+        self.assertIn("this build exposes no verified reversible Collider setter", MENU)
+        for supported in ("Float / hold height", "Custom game speed", "Goose size"):
+            self.assertIn(supported, MENU)
+        for key in ("HonkMenu.FloatEnabled", "HonkMenu.TimeScaleEnabled",
+                    "HonkMenu.TimeScale", "HonkMenu.SizeFactor"):
+            self.assertIn(key, MENU)
 
     def test_ui_dispatches_commands_without_calling_unity(self):
         self.assertIn("HonkFeatures::publishCommand(gHonkState, HonkFeatures::kCommandSavePosition)", MENU)
@@ -50,6 +56,14 @@ class HonkMenuPortTests(unittest.TestCase):
             "goose_reloc_get_position": 0x101E16108,
             "goose_reloc_move_position": 0x101E16454,
             "goose_reloc_teleport_clear_velocity": 0x101E158FC,
+            "goose_reloc_hover_kinematic": 0x101E15DA8,
+            "goose_reloc_hover_get_velocity": 0x101E15850,
+            "goose_reloc_hover_set_velocity": 0x101E158FC,
+            "goose_reloc_component_transform": 0x101DBA100,
+            "goose_reloc_transform_get_scale": 0x101DEB834,
+            "goose_reloc_transform_set_scale": 0x101DEB8E0,
+            "goose_reloc_rate_get_time_scale": 0x101DE9FE0,
+            "goose_reloc_set_time_scale": 0x101DEA040,
         }
         for symbol, va in expected.items():
             self.assertEqual(build_ipa.RELOCS[symbol][1], va)
@@ -65,6 +79,15 @@ class HonkMenuPortTests(unittest.TestCase):
         self.assertIn("scvtf   s3, w10", HELPER)
         self.assertIn("fabs    s4, s0", HELPER)
         self.assertIn("fadd    s1, s1, s3", HELPER)
+
+    def test_float_size_and_time_controls_are_game_thread_operations(self):
+        for offset in ("HONK_HOVER_ENABLED_OFFSET", "HONK_TIME_SCALE_OFFSET",
+                       "HONK_SIZE_FACTOR_OFFSET", "HONK_BASE_SCALE_X_OFFSET"):
+            self.assertIn(offset, HELPER)
+        self.assertIn(".Lrestore_time_scale", HELPER)
+        self.assertIn("UnityEngine.Time.set_timeScale", HELPER)
+        self.assertIn("Transform.set_localScale", HELPER)
+        self.assertIn("Rigidbody.set_velocity", HELPER)
 
 
 if __name__ == "__main__":
