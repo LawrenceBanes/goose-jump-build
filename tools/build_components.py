@@ -18,6 +18,7 @@ HONK_MENU_ACTIONS = [
     "jump-toggle", "jump-impulse", "horizontal-speed", "float-hold-height",
     "game-speed", "goose-size", "follow-camera-distance", "disable-npc-shoo",
     "npc-size-all-active-bodies", "npc-world-screen-markers", "save-position",
+    "camera-position-readout",
     "restore-position", "area-teleport", "practice-teleport",
     "experimental-out-of-bounds-teleport", "spawn-and-replace-unity-primitive",
     "destroy-last-primitive",

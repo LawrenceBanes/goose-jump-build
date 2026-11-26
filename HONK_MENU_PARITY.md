@@ -35,7 +35,7 @@
 | Collider visualization / debug details | Draws collider lines, object information and screen-space output | Collider geometry and a render overlay | NPC marker overlay exists; general collider visualization and native debug inspector remain unimplemented. |
 | Wireframe / create-destroy primitives | Changes rendering mode and creates/removes primitives | Renderer-state capture/restore; Unity object creation | Primitive create/remove is implemented. Wireframe is not. |
 | First-person Goose camera | Parents a new camera to Goose head and hides Goose render meshes | Camera/render lifecycle, component access and renderer restoration | Not implemented. |
-| Magic/free camera, controls, freeze/reset, position info, teleport Goose to camera, follow distance | Creates another camera, moves it by keyboard/mouse, toggles active camera, reports pose | Camera object discovery/creation, frame-phase hook and touch controls | Follow-distance multiplier is implemented using GooseCameraHelper. Free camera and camera teleport remain unimplemented; camera position display is not yet exposed. |
+| Magic/free camera, controls, freeze/reset, position info, teleport Goose to camera, follow distance | Creates another camera, moves it by keyboard/mouse, toggles active camera, reports pose | Camera object discovery/creation, frame-phase hook and touch controls | Follow-distance multiplier and a live `Camera.main` position readout are implemented. Free camera, freeze/reset, camera controls and goose-to-camera teleport remain unimplemented. The readout is source-only until the new CI build and device test. |
 | Random Bell minigame / marker | Randomizes goldenBell position and shows a marker | Named object lookup, bounded placement and UIKit marker | Not implemented because the bell pointer/name lookup is unresolved. |
 | Game speed / slow motion | Changes Unity `Time.timeScale` | Physics-thread Unity Time calls and lifecycle restoration | Implemented as an opt-in bounded 0.5×–2× global rate slider; skips paused time and returns to 1× when disabled during gameplay. |
 | Multiplayer Goose-to-Goose actions | Historic GooseNest/multiplayer behavior references GooseB and bell | Requires the single-player build to contain player-two objects | Unsupported by the exact target game build; no multiplayer mode or second Goose pointer is present. |
@@ -65,6 +65,7 @@ The following additions are mapped against the exact pinned executable's `LC_FUN
 | `Transform.get_localScale` / `set_localScale` | `0x1deb834` / `0x1deb8e0` | NPC baseline scaling |
 | `Transform.get_position` | `0x1deadc0` | NPC screen-marker input |
 | `Camera.get_main` / `WorldToScreenPoint(Vector3)` | `0x1db8128` / `0x1db7a64` | NPC screen projection |
+| `Camera.get_main` / `Component.get_transform` / `Transform.get_position` | `0x1db8128` / `0x1dba100` / `0x1deadc0` | Game-thread camera position readout |
 | `Screen.get_width` / `get_height` | `0x1de2a24` / `0x1de2a84` | Convert projection to overlay dimensions |
 | `Body.Update` hook | `0x10c8d88` | Existing shoo guard plus bounded live Body tracking |
 

@@ -768,6 +768,48 @@ goose_reloc_rb_get_velocity_maintain:
     str     xzr, [x22, #GOOSE_JUMP_TUNING_DATA_OFFSET]
 
 .Ldone:
+.Lupdate_camera_position:
+    mov     x0, xzr
+    mov     x1, xzr
+goose_reloc_camera_main_position:
+    .inst   0x94000000              // BL Camera.get_main
+    cbz     x0, .Lcamera_position_invalid
+    mov     x1, xzr
+goose_reloc_camera_transform_position:
+    .inst   0x94000000              // BL Component.get_transform
+    cbz     x0, .Lcamera_position_invalid
+    mov     x1, xzr
+goose_reloc_camera_get_position:
+    .inst   0x94000000              // BL Transform.get_position
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lcamera_position_invalid
+    fmov    w10, s1
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lcamera_position_invalid
+    fmov    w10, s2
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lcamera_position_invalid
+    fmov    w10, s0
+    add     x9, x22, #HONK_CAMERA_POSITION_X_OFFSET
+    stlr    w10, [x9]
+    fmov    w10, s1
+    add     x9, x22, #HONK_CAMERA_POSITION_Y_OFFSET
+    stlr    w10, [x9]
+    fmov    w10, s2
+    add     x9, x22, #HONK_CAMERA_POSITION_Z_OFFSET
+    stlr    w10, [x9]
+    mov     w10, #1
+    add     x9, x22, #HONK_CAMERA_POSITION_VALID_OFFSET
+    stlr    w10, [x9]
+    b       .Ldone_return
+.Lcamera_position_invalid:
+    add     x9, x22, #HONK_CAMERA_POSITION_VALID_OFFSET
+    stlr    wzr, [x9]
+.Ldone_return:
     ldr     x22, [sp, #32]
     ldr     x30, [sp, #40]
     add     sp, sp, #48

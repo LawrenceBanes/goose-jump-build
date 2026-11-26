@@ -4,7 +4,7 @@
 #include <cstdint>
 
 int main() {
-    static_assert(sizeof(GooseJumpData) == 1456);
+    static_assert(sizeof(GooseJumpData) == 1472);
     GooseJumpData state{};
     assert(!HonkFeatures::jumpEnabled(&state));
     HonkFeatures::setJumpEnabled(&state, true);

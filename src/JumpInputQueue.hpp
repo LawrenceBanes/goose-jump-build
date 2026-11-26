@@ -39,6 +39,10 @@
 #define HONK_NPC_SCALE_ENTRY_COUNT 32
 #define HONK_NPC_SCREEN_WIDTH_OFFSET 1448
 #define HONK_NPC_SCREEN_HEIGHT_OFFSET 1452
+#define HONK_CAMERA_POSITION_X_OFFSET 1456
+#define HONK_CAMERA_POSITION_Y_OFFSET 1460
+#define HONK_CAMERA_POSITION_Z_OFFSET 1464
+#define HONK_CAMERA_POSITION_VALID_OFFSET 1468
 
 #ifndef __ASSEMBLER__
 #include <math.h>
@@ -91,6 +95,10 @@ typedef struct GooseJumpData {
     HonkNpcScaleEntry npcScaleEntries[HONK_NPC_SCALE_ENTRY_COUNT];
     volatile uint32_t npcScreenWidth;
     volatile uint32_t npcScreenHeight;
+    volatile uint32_t cameraPositionXBits;
+    volatile uint32_t cameraPositionYBits;
+    volatile uint32_t cameraPositionZBits;
+    volatile uint32_t cameraPositionValid;
 } GooseJumpData;
 
 static_assert(offsetof(GooseJumpData, pendingState) == GOOSE_JUMP_PENDING_OFFSET);
@@ -130,6 +138,10 @@ static_assert(offsetof(GooseJumpData, npcScaleEntries) == HONK_NPC_SCALE_TABLE_O
 static_assert(sizeof(HonkNpcScaleEntry) == HONK_NPC_SCALE_ENTRY_SIZE);
 static_assert(offsetof(GooseJumpData, npcScreenWidth) == HONK_NPC_SCREEN_WIDTH_OFFSET);
 static_assert(offsetof(GooseJumpData, npcScreenHeight) == HONK_NPC_SCREEN_HEIGHT_OFFSET);
+static_assert(offsetof(GooseJumpData, cameraPositionXBits) == HONK_CAMERA_POSITION_X_OFFSET);
+static_assert(offsetof(GooseJumpData, cameraPositionYBits) == HONK_CAMERA_POSITION_Y_OFFSET);
+static_assert(offsetof(GooseJumpData, cameraPositionZBits) == HONK_CAMERA_POSITION_Z_OFFSET);
+static_assert(offsetof(GooseJumpData, cameraPositionValid) == HONK_CAMERA_POSITION_VALID_OFFSET);
 
 namespace GooseJumpInput {
 

@@ -46,6 +46,7 @@ static UILabel *gHonkSpeedValue;
 static UILabel *gHonkTimeScaleValue;
 static UILabel *gHonkSizeValue;
 static UILabel *gHonkCameraValue;
+static UILabel *gHonkCameraPositionLabel;
 static UILabel *gHonkNpcSizeValue;
 static UIView *gHonkNpcOverlay;
 static NSTimer *gHonkRefresh;
@@ -310,6 +311,8 @@ static void HonkBuildPage(NSInteger page) {
         case 0: HonkBuildMovementPage(); break;
         case 1: HonkBuildTeleportPage(); break;
         case 2:
+            gHonkCameraPositionLabel = HonkLabel(@"Camera position: waiting for gameplay", UIFontWeightRegular, 12, UIColor.lightTextColor);
+            HonkAddRow(gHonkContent, gHonkCameraPositionLabel);
             HonkAddUnavailable(@"First-person camera", @"the game camera uses a follow rig; switching camera modes is not mapped");
             HonkAddUnavailable(@"Magic / free camera", @"creating and managing Unity cameras from native code is not implemented");
             HonkAddUnavailable(@"Teleport goose to camera", @"depends on the unavailable free-camera feature");
@@ -576,6 +579,16 @@ static void HonkBuildPage(NSInteger page) {
     HonkResolveGuest();
     UIWindow *window = HonkGameWindow();
     if (window && window.rootViewController.view != gHonkRoot.superview) [self installWhenReady];
+    if (gHonkCameraPositionLabel && gHonkState &&
+        __atomic_load_n(&gHonkState->cameraPositionValid, __ATOMIC_ACQUIRE)) {
+        const float x = GooseJumpInput::bitsFloat(__atomic_load_n(&gHonkState->cameraPositionXBits, __ATOMIC_ACQUIRE));
+        const float y = GooseJumpInput::bitsFloat(__atomic_load_n(&gHonkState->cameraPositionYBits, __ATOMIC_ACQUIRE));
+        const float z = GooseJumpInput::bitsFloat(__atomic_load_n(&gHonkState->cameraPositionZBits, __ATOMIC_ACQUIRE));
+        if (std::isfinite(x) && std::isfinite(y) && std::isfinite(z))
+            gHonkCameraPositionLabel.text = [NSString stringWithFormat:@"Camera position: %.2f, %.2f, %.2f", x, y, z];
+    } else if (gHonkCameraPositionLabel) {
+        gHonkCameraPositionLabel.text = @"Camera position: waiting for gameplay";
+    }
     [gHonkNpcOverlay setNeedsDisplay];
 }
 

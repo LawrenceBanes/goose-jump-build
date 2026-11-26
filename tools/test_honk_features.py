@@ -36,6 +36,9 @@ class HonkMenuPortTests(unittest.TestCase):
         self.assertIn("Collision stays enabled; this is not noclip", MENU)
         self.assertIn("Scene collider pairs are not yet enumerated safely", MENU)
         self.assertIn("NPC size (active people)", MENU)
+        self.assertIn("Camera position: waiting for gameplay", MENU)
+        self.assertIn("Camera.main", MENU)
+        self.assertIn("Transform.get_position", HELPER)
         for supported in ("Float / hold height", "Custom game speed", "Goose size",
                           "NPC size (active people)", "NPC tracking markers",
                           "Follow camera distance", "Disable NPC shoo"):
@@ -135,7 +138,7 @@ class HonkMenuPortTests(unittest.TestCase):
         expected = {
             "follow-camera-distance", "disable-npc-shoo", "npc-size-all-active-bodies",
             "npc-world-screen-markers", "spawn-and-replace-unity-primitive",
-            "destroy-last-primitive", "experimental-out-of-bounds-teleport",
+            "camera-position-readout", "destroy-last-primitive", "experimental-out-of-bounds-teleport",
         }
         self.assertTrue(expected.issubset(set(build_components.HONK_MENU_ACTIONS)))
 
