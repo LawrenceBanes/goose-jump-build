@@ -42,7 +42,7 @@ jobs:
           PY
 
       - name: Install LLVM
-        run: brew install llvm
+        run: brew install llvm lld
 
       - name: Compile and validate iPhoneOS ARM64 components
         env:
@@ -50,6 +50,7 @@ jobs:
           JUMP_COOLDOWN: ${{ inputs.cooldown || '0.35' }}
         run: |
           LLVM_BIN="$(brew --prefix llvm)/bin"
+          LD_BIN="$(command -v ld.lld)"
           export PATH="$LLVM_BIN:$PATH"
           test "$(uname -m)" = "arm64"
           python3 -m py_compile tools/*.py
@@ -62,7 +63,7 @@ jobs:
             --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --clang "$LLVM_BIN/clang" \
-            --ld "$LLVM_BIN/ld.lld" \
+            --ld "$LD_BIN" \
             --objcopy "$LLVM_BIN/llvm-objcopy" \
             --nm "$LLVM_BIN/llvm-nm"
           xcrun --sdk iphoneos otool -hv -l build/GooseJump.dylib
