@@ -47,6 +47,13 @@ class Arm64EncodingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build.encode_b(0x1000, 0x1002)
 
+    def test_camera_hook_branch_uses_verified_lateupdate_entry(self):
+        word = build.encode_b(build.CAMERA_LATEUPDATE_VA, build.CAMERA_FREE_HELPER_VA)
+        self.assertEqual(word >> 26, 0b000101)
+        self.assertEqual(build.CAMERA_LATEUPDATE_VA + ((word & 0x03FFFFFF) << 2),
+                         build.CAMERA_FREE_HELPER_VA)
+        self.assertEqual(build.CAMERA_LATEUPDATE_ORIGINAL, 0xD10203FF)
+
     def test_adrp_and_add_reconstruct_data_address(self):
         pc = 0x1026F0C30
         target = build.DATA_VA
@@ -120,10 +127,16 @@ class PatcherTests(unittest.TestCase):
             build.BASE + 0x1DEAE6C,  # Transform.set_position
             build.BASE + 0x1DD344C,  # UnityEngine.Object.Destroy
             build.BASE + 0x1DEADC0,  # Transform.get_position
+            build.BASE + 0x1DEAE6C,  # Transform.set_position for free camera
             build.BASE + 0x1DB8128,  # Camera.get_main
             build.BASE + 0x1DB7A64,  # Camera.WorldToScreenPoint(Vector3)
             build.BASE + 0x1DE2A24,  # Screen.get_width
             build.BASE + 0x1DE2A84,  # Screen.get_height
+            build.BASE + 0x2137CF8,  # Component.GetComponentsInChildren<Collider>(bool), shared generic body
+            build.BASE + 0x1E12F78,  # Physics.IgnoreCollision(Collider, Collider, bool)
+            build.BASE + 0x1E11720,  # Collider.get_enabled (getter only)
+            build.BASE + 0x1DC3A6C,  # GameObject.Find(string)
+            build.BASE + 0x1146688,  # SwitchEventManager.TriggerEvent(string)
         }
         self.assertTrue(required.issubset(starts))
         self.assertIn(build.CAMERA_LATEUPDATE_VA, starts)
@@ -146,6 +159,8 @@ class PatcherTests(unittest.TestCase):
                          build.encode_bl(build.HOOK_VA, build.HELPER_VA))
         self.assertEqual(struct.unpack_from("<I", patched, build.SHOO_HOOK_FILEOFF)[0],
                          build.encode_b(build.SHOO_HOOK_VA, build.SHOO_GUARD_VA))
+        self.assertEqual(struct.unpack_from("<I", patched, build.CAMERA_LATEUPDATE_FILEOFF)[0],
+                         build.encode_b(build.CAMERA_LATEUPDATE_VA, build.CAMERA_FREE_HELPER_VA))
         # The guard now contains the NPC scale service before the preserved
         # Body.Update prologue; patch_helper validates its symbolic branch.
         self.assertIn("goose_reloc_shoo_continue", (ROOT / "src/jump_helper.S").read_text())

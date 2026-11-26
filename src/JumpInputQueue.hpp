@@ -43,6 +43,9 @@
 #define HONK_CAMERA_POSITION_Y_OFFSET 1460
 #define HONK_CAMERA_POSITION_Z_OFFSET 1464
 #define HONK_CAMERA_POSITION_VALID_OFFSET 1468
+#define HONK_FREE_CAMERA_X_OFFSET 1472
+#define HONK_FREE_CAMERA_Y_OFFSET 1476
+#define HONK_FREE_CAMERA_Z_OFFSET 1480
 
 #ifndef __ASSEMBLER__
 #include <math.h>
@@ -99,6 +102,9 @@ typedef struct GooseJumpData {
     volatile uint32_t cameraPositionYBits;
     volatile uint32_t cameraPositionZBits;
     volatile uint32_t cameraPositionValid;
+    volatile uint32_t freeCameraXBits;
+    volatile uint32_t freeCameraYBits;
+    volatile uint32_t freeCameraZBits;
 } GooseJumpData;
 
 static_assert(offsetof(GooseJumpData, pendingState) == GOOSE_JUMP_PENDING_OFFSET);
@@ -142,6 +148,9 @@ static_assert(offsetof(GooseJumpData, cameraPositionXBits) == HONK_CAMERA_POSITI
 static_assert(offsetof(GooseJumpData, cameraPositionYBits) == HONK_CAMERA_POSITION_Y_OFFSET);
 static_assert(offsetof(GooseJumpData, cameraPositionZBits) == HONK_CAMERA_POSITION_Z_OFFSET);
 static_assert(offsetof(GooseJumpData, cameraPositionValid) == HONK_CAMERA_POSITION_VALID_OFFSET);
+static_assert(offsetof(GooseJumpData, freeCameraXBits) == HONK_FREE_CAMERA_X_OFFSET);
+static_assert(offsetof(GooseJumpData, freeCameraYBits) == HONK_FREE_CAMERA_Y_OFFSET);
+static_assert(offsetof(GooseJumpData, freeCameraZBits) == HONK_FREE_CAMERA_Z_OFFSET);
 
 namespace GooseJumpInput {
 
@@ -223,6 +232,7 @@ static constexpr uint32_t kCommandTeleportToCamera = 9;
 static constexpr uint32_t kFloatEnabled = 1u << 1;
 static constexpr uint32_t kDisableNpcShoo = 1u << 2;
 static constexpr uint32_t kNpcTracking = 1u << 3;
+static constexpr uint32_t kFreeCamera = 1u << 4;
 static constexpr float kMinimumSpeedFactor = 0.5f;
 static constexpr float kMaximumSpeedFactor = 3.0f;
 static constexpr float kMinimumJumpImpulse = 0.5f;

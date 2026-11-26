@@ -217,6 +217,8 @@ def main() -> None:
         "MobileControlsManager.BuildUI": 0x101102FC8,
         "MobileControlsManager.BuildButton": 0x101108804,
         "VirtualButton.OnPointerDown": 0x10110B524,
+        "GooseCameraHelper.LateUpdate": 0x1010C8D88,
+        "Body.Update": 0x10107D13C,
     }
     function_checks = {}
     for name, address in candidate_addresses.items():

@@ -47,6 +47,9 @@ static UILabel *gHonkTimeScaleValue;
 static UILabel *gHonkSizeValue;
 static UILabel *gHonkCameraValue;
 static UILabel *gHonkCameraPositionLabel;
+static UILabel *gHonkCameraStepValue;
+static UISwitch *gHonkFreeCameraSwitch;
+static float gHonkFreeCameraStep = 0.5f;
 static UILabel *gHonkNpcSizeValue;
 static UIView *gHonkNpcOverlay;
 static NSTimer *gHonkRefresh;
@@ -195,6 +198,7 @@ static UISlider *HonkSlider(UIStackView *stack, NSString *title, float min, floa
         case 6: valueLabel.text = [NSString stringWithFormat:@"%.2fx", value]; break;
         case 7: valueLabel.text = [NSString stringWithFormat:@"%.0f%%", value * 100.0f]; break;
         case 8: valueLabel.text = [NSString stringWithFormat:@"%.0f%%", value * 100.0f]; break;
+        case 15: valueLabel.text = [NSString stringWithFormat:@"%.1f units", value]; break;
         default: valueLabel.text = [NSString stringWithFormat:@"%.0f%%", value * 100.0f]; break;
     }
     [row addArrangedSubview:valueLabel];
@@ -205,6 +209,7 @@ static UISlider *HonkSlider(UIStackView *stack, NSString *title, float min, floa
     if (tag == 7) gHonkSizeValue = valueLabel;
     if (tag == 8) gHonkCameraValue = valueLabel;
     if (tag == 11) gHonkNpcSizeValue = valueLabel;
+    if (tag == 15) gHonkCameraStepValue = valueLabel;
     return slider;
 }
 
@@ -313,13 +318,51 @@ static void HonkBuildPage(NSInteger page) {
         case 2:
             gHonkCameraPositionLabel = HonkLabel(@"Camera position: waiting for gameplay", UIFontWeightRegular, 12, UIColor.lightTextColor);
             HonkAddRow(gHonkContent, gHonkCameraPositionLabel);
+            gHonkFreeCameraSwitch = [[UISwitch alloc] init];
+            gHonkFreeCameraSwitch.tag = 14;
+            gHonkFreeCameraSwitch.on = HonkFeatures::freeCameraEnabled(gHonkState);
+            gHonkFreeCameraSwitch.multipleTouchEnabled = YES;
+            gHonkFreeCameraSwitch.exclusiveTouch = NO;
+            [gHonkFreeCameraSwitch addTarget:[NSClassFromString(@"HonkMenuOverlay") class]
+                                      action:@selector(settingChanged:) forControlEvents:UIControlEventValueChanged];
+            UIStackView *freeCameraRow = [[UIStackView alloc] init];
+            freeCameraRow.axis = UILayoutConstraintAxisHorizontal;
+            freeCameraRow.alignment = UIStackViewAlignmentCenter;
+            freeCameraRow.distribution = UIStackViewDistributionEqualSpacing;
+            [freeCameraRow addArrangedSubview:HonkLabel(@"Free camera", UIFontWeightSemibold, 15, UIColor.whiteColor)];
+            [freeCameraRow addArrangedSubview:gHonkFreeCameraSwitch];
+            HonkAddRow(gHonkContent, freeCameraRow);
+            HonkAddRow(gHonkContent, HonkLabel(@"Freezes the follow rig and moves the existing game camera in 0.5-unit world-axis steps. Camera rotation stays fixed.", UIFontWeightRegular, 12, UIColor.lightTextColor));
+            {
+                NSNumber *storedStep = [NSUserDefaults.standardUserDefaults objectForKey:@"HonkMenu.FreeCameraStep"];
+                gHonkFreeCameraStep = storedStep ? fminf(fmaxf(storedStep.floatValue, 0.1f), 2.0f) : 0.5f;
+                HonkSlider(gHonkContent, @"Free camera move step", 0.1f, 2.0f, gHonkFreeCameraStep, 15);
+            }
+            {
+                UIStackView *vertical = [[UIStackView alloc] init];
+                vertical.axis = UILayoutConstraintAxisHorizontal;
+                vertical.distribution = UIStackViewDistributionFillEqually;
+                [vertical addArrangedSubview:HonkButton(@"Up", 220, [NSClassFromString(@"HonkMenuOverlay") class], @selector(menuAction:))];
+                [vertical addArrangedSubview:HonkButton(@"Down", 221, [NSClassFromString(@"HonkMenuOverlay") class], @selector(menuAction:))];
+                HonkAddRow(gHonkContent, vertical);
+                UIStackView *lateral = [[UIStackView alloc] init];
+                lateral.axis = UILayoutConstraintAxisHorizontal;
+                lateral.distribution = UIStackViewDistributionFillEqually;
+                [lateral addArrangedSubview:HonkButton(@"Left", 222, [NSClassFromString(@"HonkMenuOverlay") class], @selector(menuAction:))];
+                [lateral addArrangedSubview:HonkButton(@"Right", 223, [NSClassFromString(@"HonkMenuOverlay") class], @selector(menuAction:))];
+                HonkAddRow(gHonkContent, lateral);
+                UIStackView *depth = [[UIStackView alloc] init];
+                depth.axis = UILayoutConstraintAxisHorizontal;
+                depth.distribution = UIStackViewDistributionFillEqually;
+                [depth addArrangedSubview:HonkButton(@"Forward", 224, [NSClassFromString(@"HonkMenuOverlay") class], @selector(menuAction:))];
+                [depth addArrangedSubview:HonkButton(@"Back", 225, [NSClassFromString(@"HonkMenuOverlay") class], @selector(menuAction:))];
+                HonkAddRow(gHonkContent, depth);
+            }
             HonkAddRow(gHonkContent, HonkButton(@"Teleport goose to current camera", 3,
                                                 [NSClassFromString(@"HonkMenuOverlay") class],
                                                 @selector(menuAction:)));
             HonkAddRow(gHonkContent, HonkLabel(@"Uses the live follow-camera position. Save your location first if testing near obstacles.", UIFontWeightRegular, 12, UIColor.lightTextColor));
             HonkAddUnavailable(@"First-person camera", @"the game camera uses a follow rig; switching camera modes is not mapped");
-            HonkAddUnavailable(@"Magic / free camera", @"creating and managing Unity cameras from native code is not implemented");
-            HonkAddUnavailable(@"Teleport goose to camera", @"depends on the unavailable free-camera feature");
             HonkAddRow(gHonkContent, HonkLabel(@"Follow camera distance is available under Move → Camera.", UIFontWeightRegular, 12, UIColor.lightTextColor));
             break;
         case 3:
@@ -593,6 +636,8 @@ static void HonkBuildPage(NSInteger page) {
     } else if (gHonkCameraPositionLabel) {
         gHonkCameraPositionLabel.text = @"Camera position: waiting for gameplay";
     }
+    if (gHonkFreeCameraSwitch && gHonkState)
+        [gHonkFreeCameraSwitch setOn:HonkFeatures::freeCameraEnabled(gHonkState) animated:NO];
     [gHonkNpcOverlay setNeedsDisplay];
 }
 
@@ -630,6 +675,11 @@ static void HonkBuildPage(NSInteger page) {
                 [NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"HonkMenu.NpcTracking"];
                 [gHonkNpcOverlay setNeedsDisplay];
                 break;
+            case 14:
+                if (!HonkFeatures::setFreeCameraEnabled(gHonkState, enabled)) {
+                    ((UISwitch *)sender).on = NO;
+                }
+                break;
         }
     } else if ([sender isKindOfClass:UISlider.class]) {
         UISlider *slider = (UISlider *)sender;
@@ -657,6 +707,10 @@ static void HonkBuildPage(NSInteger page) {
             HonkFeatures::setNpcSizeFactor(gHonkState, slider.value);
             gHonkNpcSizeValue.text = [NSString stringWithFormat:@"%.0f%%", slider.value * 100.0f];
             [NSUserDefaults.standardUserDefaults setFloat:slider.value forKey:@"HonkMenu.NpcSizeFactor"];
+        } else if (slider.tag == 15) {
+            gHonkFreeCameraStep = fminf(fmaxf(slider.value, 0.1f), 2.0f);
+            gHonkCameraStepValue.text = [NSString stringWithFormat:@"%.1f units", gHonkFreeCameraStep];
+            [NSUserDefaults.standardUserDefaults setFloat:gHonkFreeCameraStep forKey:@"HonkMenu.FreeCameraStep"];
         }
     }
 }
@@ -681,6 +735,18 @@ static void HonkBuildPage(NSInteger page) {
         (void)HonkFeatures::publishCommand(gHonkState, HonkFeatures::kCommandDestroySpawned);
         return;
     }
+    if (button.tag >= 220 && button.tag <= 225) {
+        if (!gHonkState) return;
+        switch (button.tag) {
+            case 220: (void)HonkFeatures::nudgeFreeCamera(gHonkState, 0.0f, gHonkFreeCameraStep, 0.0f); break;
+            case 221: (void)HonkFeatures::nudgeFreeCamera(gHonkState, 0.0f, -gHonkFreeCameraStep, 0.0f); break;
+            case 222: (void)HonkFeatures::nudgeFreeCamera(gHonkState, -gHonkFreeCameraStep, 0.0f, 0.0f); break;
+            case 223: (void)HonkFeatures::nudgeFreeCamera(gHonkState, gHonkFreeCameraStep, 0.0f, 0.0f); break;
+            case 224: (void)HonkFeatures::nudgeFreeCamera(gHonkState, 0.0f, 0.0f, gHonkFreeCameraStep); break;
+            case 225: (void)HonkFeatures::nudgeFreeCamera(gHonkState, 0.0f, 0.0f, -gHonkFreeCameraStep); break;
+        }
+        return;
+    }
     HonkResolveGuest();
     if (!gHonkState) return;
     switch (button.tag) {
@@ -703,6 +769,7 @@ static void HonkBuildPage(NSInteger page) {
     if (gHonkState) {
         GooseJumpInput::clear(&gHonkState->pendingState);
         __atomic_store_n(&gHonkState->command, HonkFeatures::kCommandNone, __ATOMIC_RELEASE);
+        (void)HonkFeatures::setFreeCameraEnabled(gHonkState, false);
     }
 }
 

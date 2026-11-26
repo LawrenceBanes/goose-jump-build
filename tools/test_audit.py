@@ -51,6 +51,14 @@ class SourceAppAuditTests(unittest.TestCase):
     def test_movement_hook_lead_is_not_a_function_entry(self):
         self.assertNotIn(0x1011107E0, self.macho["function_starts"])
 
+    def test_camera_and_body_hooks_are_verified_function_entries(self):
+        starts = set(self.macho["function_starts"])
+        self.assertIn(0x1010C8D88, starts)
+        self.assertIn(0x10107D13C, starts)
+        data = audit.EXE.read_bytes()
+        offset = 0x1010C8D88 - 0x100000000
+        self.assertEqual(int.from_bytes(data[offset:offset + 4], "little"), 0xD10203FF)
+
     def test_suggested_data_address_is_unsectioned_zero_fill(self):
         candidate = 0x102E1B000
         data = next(s for s in self.macho["segments"] if s["name"] == "__DATA")

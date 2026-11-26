@@ -41,11 +41,17 @@ goose_reloc_data_add:
     stlr    wzr, [x10]
     add     x10, x22, #HONK_SAVED_VALID_OFFSET
     stlr    wzr, [x10]
+    add     x10, x22, #HONK_FLAGS_OFFSET
+    ldar    w11, [x10]
+    bic     w11, w11, #16
+    stlr    w11, [x10]
     str     xzr, [x22, #HONK_SPAWNED_OBJECT_OFFSET]
     str     wzr, [x22, #HONK_SCALE_CAPTURED_OFFSET]
     str     xzr, [x22, #HONK_SCALE_GOOSE_OFFSET]
     str     wzr, [x22, #HONK_CAMERA_CAPTURED_OFFSET]
     str     xzr, [x22, #HONK_CAMERA_HELPER_OFFSET]
+    add     x10, x22, #HONK_CAMERA_POSITION_VALID_OFFSET
+    stlr    wzr, [x10]
     add     x9, x22, #HONK_NPC_SCALE_TABLE_OFFSET
     mov     w10, #HONK_NPC_SCALE_ENTRY_COUNT
 .Lreset_npc_scale_entries:
@@ -1113,3 +1119,77 @@ goose_reloc_shoo_displaced:
 goose_reloc_shoo_continue:
     .inst   0x14000000              // B Body.Update+4
 .size goose_shoo_guard, .-goose_shoo_guard
+
+.space 0x1800 - (. - goose_jump_helper), 0
+.global goose_camera_free_hook
+.type goose_camera_free_hook, %function
+goose_camera_free_hook:
+goose_reloc_camera_hook_data_adrp:
+    .inst   0x90000009              // ADRP x9, goose_jump_data
+goose_reloc_camera_hook_data_add:
+    .inst   0x91000129              // ADD x9, x9, #lo12(goose_jump_data)
+    add     x10, x9, #HONK_FLAGS_OFFSET
+    ldar    w10, [x10]
+    tbz     w10, #4, .Lcamera_follow_original
+
+    // This hook is GooseCameraHelper.LateUpdate(this). The Goose stores its
+    // camera Transform at +0x238; bypassing the follow update only while the
+    // toggle is on leaves the original camera path intact when disabled.
+    ldr     x11, [x0, #0x18]         // GooseCameraHelper.goose
+    cbz     x11, .Lcamera_follow_original
+    ldr     x11, [x11, #0x238]      // Goose.cameraTransform
+    cbz     x11, .Lcamera_follow_original
+    add     x10, x9, #HONK_FREE_CAMERA_X_OFFSET
+    ldar    w12, [x10]
+    fmov    s0, w12
+    add     x10, x9, #HONK_FREE_CAMERA_Y_OFFSET
+    ldar    w12, [x10]
+    fmov    s1, w12
+    add     x10, x9, #HONK_FREE_CAMERA_Z_OFFSET
+    ldar    w12, [x10]
+    fmov    s2, w12
+    fmov    w12, s0
+    ubfx    w12, w12, #23, #8
+    cmp     w12, #255
+    b.eq    .Lcamera_follow_original
+    fmov    w12, s1
+    ubfx    w12, w12, #23, #8
+    cmp     w12, #255
+    b.eq    .Lcamera_follow_original
+    fmov    w12, s2
+    ubfx    w12, w12, #23, #8
+    cmp     w12, #255
+    b.eq    .Lcamera_follow_original
+    mov     w12, #100
+    scvtf   s3, w12
+    fabs    s4, s0
+    fcmp    s4, s3
+    b.gt    .Lcamera_follow_original
+    fabs    s4, s1
+    fcmp    s4, s3
+    b.gt    .Lcamera_follow_original
+    fabs    s4, s2
+    fcmp    s4, s3
+    b.gt    .Lcamera_follow_original
+
+    sub     sp, sp, #48
+    stp     x19, x20, [sp]
+    stp     x21, x22, [sp, #16]
+    str     x30, [sp, #32]
+    mov     x20, x11
+    mov     x0, x20
+    mov     x1, xzr
+goose_reloc_camera_free_set_position:
+    .inst   0x94000000              // BL Transform.set_position
+    ldp     x19, x20, [sp]
+    ldp     x21, x22, [sp, #16]
+    ldr     x30, [sp, #32]
+    add     sp, sp, #48
+    ret
+
+.Lcamera_follow_original:
+goose_reloc_camera_hook_displaced:
+    .inst   0xD10203FF              // GooseCameraHelper.LateUpdate sub sp,sp,#0x80
+goose_reloc_camera_original_continue:
+    .inst   0x14000000              // B GooseCameraHelper.LateUpdate+4
+.size goose_camera_free_hook, .-goose_camera_free_hook

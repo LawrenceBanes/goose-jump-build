@@ -38,8 +38,15 @@ class HonkMenuPortTests(unittest.TestCase):
         self.assertIn("NPC size (active people)", MENU)
         self.assertIn("Camera position: waiting for gameplay", MENU)
         self.assertIn("Teleport goose to current camera", MENU)
+        for control in ("Free camera", "Free camera move step", "Forward", "Back"):
+            self.assertIn(control, MENU)
         self.assertIn("Camera.main", MENU)
         self.assertIn("Transform.get_position", HELPER)
+        self.assertIn("HONK_CAMERA_POSITION_VALID_OFFSET", HELPER)
+        self.assertIn("kCommandTeleportToCamera", MENU)
+        self.assertIn("goose_camera_free_hook", HELPER)
+        self.assertIn("Goose.cameraTransform", HELPER)
+        self.assertIn("Transform.set_position", HELPER)
         for supported in ("Float / hold height", "Custom game speed", "Goose size",
                           "NPC size (active people)", "NPC tracking markers",
                           "Follow camera distance", "Disable NPC shoo"):
@@ -86,6 +93,9 @@ class HonkMenuPortTests(unittest.TestCase):
             "goose_reloc_npc_world_to_screen": 0x101DB7A64,
             "goose_reloc_npc_screen_width": 0x101DE2A24,
             "goose_reloc_npc_screen_height": 0x101DE2A84,
+            "goose_reloc_camera_main_position": 0x101DB8128,
+            "goose_reloc_camera_transform_position": 0x101DBA100,
+            "goose_reloc_camera_get_position": 0x101DEADC0,
             "goose_reloc_transform_get_scale": 0x101DEB834,
             "goose_reloc_transform_set_scale": 0x101DEB8E0,
             "goose_reloc_rate_get_time_scale": 0x101DE9FE0,
@@ -139,7 +149,8 @@ class HonkMenuPortTests(unittest.TestCase):
         expected = {
             "follow-camera-distance", "disable-npc-shoo", "npc-size-all-active-bodies",
             "npc-world-screen-markers", "teleport-to-current-camera", "spawn-and-replace-unity-primitive",
-            "camera-position-readout", "destroy-last-primitive", "experimental-out-of-bounds-teleport",
+            "camera-position-readout", "free-camera-world-axis-move", "teleport-to-current-camera",
+            "destroy-last-primitive", "experimental-out-of-bounds-teleport",
         }
         self.assertTrue(expected.issubset(set(build_components.HONK_MENU_ACTIONS)))
 

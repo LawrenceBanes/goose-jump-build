@@ -22,6 +22,50 @@ inline void setJumpEnabled(GooseJumpData *state, bool enabled) {
                                            true, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
 }
 
+inline bool freeCameraEnabled(const GooseJumpData *state) {
+    return (flags(state) & kFreeCamera) != 0;
+}
+
+inline bool setFreeCameraEnabled(GooseJumpData *state, bool enabled) {
+    if (!state) return false;
+    if (enabled) {
+        if (!__atomic_load_n(&state->cameraPositionValid, __ATOMIC_ACQUIRE)) return false;
+        const float x = GooseJumpInput::bitsFloat(
+            __atomic_load_n(&state->cameraPositionXBits, __ATOMIC_ACQUIRE));
+        const float y = GooseJumpInput::bitsFloat(
+            __atomic_load_n(&state->cameraPositionYBits, __ATOMIC_ACQUIRE));
+        const float z = GooseJumpInput::bitsFloat(
+            __atomic_load_n(&state->cameraPositionZBits, __ATOMIC_ACQUIRE));
+        if (!validTeleport(x, y, z)) return false;
+        __atomic_store_n(&state->freeCameraXBits, GooseJumpInput::floatBits(x), __ATOMIC_RELAXED);
+        __atomic_store_n(&state->freeCameraYBits, GooseJumpInput::floatBits(y), __ATOMIC_RELAXED);
+        __atomic_store_n(&state->freeCameraZBits, GooseJumpInput::floatBits(z), __ATOMIC_RELAXED);
+    }
+    uint32_t observed = __atomic_load_n(&state->featureFlags, __ATOMIC_ACQUIRE);
+    uint32_t desired;
+    do {
+        desired = enabled ? (observed | kFreeCamera) : (observed & ~kFreeCamera);
+    } while (!__atomic_compare_exchange_n(&state->featureFlags, &observed, desired,
+                                           true, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
+    return true;
+}
+
+inline bool nudgeFreeCamera(GooseJumpData *state, float dx, float dy, float dz) {
+    if (!state || !freeCameraEnabled(state) ||
+        !isfinite(dx) || !isfinite(dy) || !isfinite(dz)) return false;
+    const float x = GooseJumpInput::bitsFloat(
+        __atomic_load_n(&state->freeCameraXBits, __ATOMIC_ACQUIRE)) + dx;
+    const float y = GooseJumpInput::bitsFloat(
+        __atomic_load_n(&state->freeCameraYBits, __ATOMIC_ACQUIRE)) + dy;
+    const float z = GooseJumpInput::bitsFloat(
+        __atomic_load_n(&state->freeCameraZBits, __ATOMIC_ACQUIRE)) + dz;
+    if (!validTeleport(x, y, z)) return false;
+    __atomic_store_n(&state->freeCameraXBits, GooseJumpInput::floatBits(x), __ATOMIC_RELEASE);
+    __atomic_store_n(&state->freeCameraYBits, GooseJumpInput::floatBits(y), __ATOMIC_RELEASE);
+    __atomic_store_n(&state->freeCameraZBits, GooseJumpInput::floatBits(z), __ATOMIC_RELEASE);
+    return true;
+}
+
 inline float speedFactor(const GooseJumpData *state) {
     if (!state) return 1.0f;
     const uint32_t bits = __atomic_load_n(&state->speedFactorBits, __ATOMIC_ACQUIRE);

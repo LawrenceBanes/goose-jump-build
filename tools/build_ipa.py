@@ -35,9 +35,12 @@ SHOO_HOOK_VA = 0x10107D13C
 SHOO_HOOK_FILEOFF = 0x107D13C
 SHOO_HOOK_ORIGINAL = 0xA9BE4FF4  # stp x20, x19, [sp, #-0x20]!
 CAMERA_LATEUPDATE_VA = 0x1010C8D88
+CAMERA_LATEUPDATE_FILEOFF = CAMERA_LATEUPDATE_VA - BASE
+CAMERA_LATEUPDATE_ORIGINAL = 0xD10203FF  # sub sp, sp, #0x80
 HELPER_VA = 0x1026F0C20
 HELPER_FILEOFF = 0x26F0C20
 SHOO_GUARD_VA = HELPER_VA + 0x1000
+CAMERA_FREE_HELPER_VA = HELPER_VA + 0x1800
 CODE_END_VA = 0x1026F4000
 DATA_VA = 0x102E1B000
 DATA_SIZE = 0x1000
@@ -82,6 +85,10 @@ RELOCS = {
     "goose_reloc_camera_main_position": ("bl", BASE + 0x1DB8128, None),
     "goose_reloc_camera_transform_position": ("bl", BASE + 0x1DBA100, None),
     "goose_reloc_camera_get_position": ("bl", BASE + 0x1DEADC0, None),
+    "goose_reloc_camera_free_set_position": ("bl", BASE + 0x1DEAE6C, None),
+    "goose_reloc_camera_original_continue": ("b", CAMERA_LATEUPDATE_VA + 4, None),
+    "goose_reloc_camera_hook_data_adrp": ("adrp", DATA_VA, 9),
+    "goose_reloc_camera_hook_data_add": ("add", DATA_VA, 9),
     "goose_reloc_rb_kinematic": ("bl", BASE + 0x1E15DA8, None),
     "goose_reloc_rb_get_velocity": ("bl", BASE + 0x1E15850, None),
     "goose_reloc_rb_get_velocity_maintain": ("bl", BASE + 0x1E15850, None),
@@ -229,10 +236,16 @@ def patch_helper(blob: bytes, nm_output: str) -> bytes:
         raise ValueError("helper link address differs from pinned code cave")
     if names.get("goose_shoo_guard") != SHOO_GUARD_VA:
         raise ValueError("NPC shoo guard is not at its reserved helper address")
+    if names.get("goose_camera_free_hook") != CAMERA_FREE_HELPER_VA:
+        raise ValueError("free-camera hook is not at its reserved helper address")
     out = bytearray(blob)
     displaced = names.get("goose_reloc_shoo_displaced")
     if displaced is None or struct.unpack_from("<I", out, displaced - HELPER_VA)[0] != SHOO_HOOK_ORIGINAL:
         raise ValueError("NPC shoo helper does not preserve the verified displaced instruction")
+    camera_displaced = names.get("goose_reloc_camera_hook_displaced")
+    if (camera_displaced is None or
+            struct.unpack_from("<I", out, camera_displaced - HELPER_VA)[0] != CAMERA_LATEUPDATE_ORIGINAL):
+        raise ValueError("free-camera hook does not preserve the verified displaced instruction")
     for symbol, (kind, target, reg) in RELOCS.items():
         if symbol not in names:
             raise ValueError(f"missing helper relocation marker: {symbol}")
@@ -343,19 +356,29 @@ def patch_executable(original: bytes, helper: bytes) -> bytes:
         raise ValueError("helper does not replay the displaced instruction")
     if len(helper) < 0x1000 + 24:
         raise ValueError("NPC shoo guard is missing from the helper")
+    if len(helper) <= CAMERA_FREE_HELPER_VA - HELPER_VA + 64:
+        raise ValueError("free-camera hook is missing from the helper")
     if original[HELPER_FILEOFF:0x26F4000] != b"\0" * (0x26F4000 - HELPER_FILEOFF):
         raise ValueError("code cave is not all zero; refusing to overwrite")
     if struct.unpack_from("<I", original, HOOK_FILEOFF)[0] != HOOK_ORIGINAL:
         raise ValueError("hook instruction mismatch; refusing unsupported binary")
     if struct.unpack_from("<I", original, SHOO_HOOK_FILEOFF)[0] != SHOO_HOOK_ORIGINAL:
         raise ValueError("NPC Body.Update instruction mismatch; refusing unsupported binary")
+    if struct.unpack_from("<I", original, CAMERA_LATEUPDATE_FILEOFF)[0] != CAMERA_LATEUPDATE_ORIGINAL:
+        raise ValueError("GooseCameraHelper.LateUpdate instruction mismatch; refusing unsupported binary")
     if SHOO_HOOK_VA not in info["function_starts"]:
         raise ValueError("NPC Body.Update hook is not a verified function start")
+    camera_starts = info["function_starts"]
+    camera_next = min((x for x in camera_starts if x > CAMERA_LATEUPDATE_VA), default=None)
+    if CAMERA_LATEUPDATE_VA not in camera_starts or camera_next != 0x1010C90AC:
+        raise ValueError("GooseCameraHelper.LateUpdate function boundary differs from audited binary")
     out = bytearray(original)
     out[HELPER_FILEOFF:HELPER_FILEOFF + len(helper)] = helper
     struct.pack_into("<I", out, HOOK_FILEOFF, encode_bl(HOOK_VA, HELPER_VA))
     struct.pack_into("<I", out, SHOO_HOOK_FILEOFF,
                      encode_b(SHOO_HOOK_VA, SHOO_GUARD_VA))
+    struct.pack_into("<I", out, CAMERA_LATEUPDATE_FILEOFF,
+                     encode_b(CAMERA_LATEUPDATE_VA, CAMERA_FREE_HELPER_VA))
     patch_load_commands(out)
     return bytes(out)
 
@@ -442,6 +465,8 @@ def validate_patched(exe: bytes, helper: bytes) -> None:
         raise ValueError("patched call site does not branch to helper")
     if struct.unpack_from("<I", exe, SHOO_HOOK_FILEOFF)[0] != encode_b(SHOO_HOOK_VA, SHOO_GUARD_VA):
         raise ValueError("NPC Body.Update does not branch to shoo guard")
+    if struct.unpack_from("<I", exe, CAMERA_LATEUPDATE_FILEOFF)[0] != encode_b(CAMERA_LATEUPDATE_VA, CAMERA_FREE_HELPER_VA):
+        raise ValueError("GooseCameraHelper.LateUpdate does not branch to free-camera hook")
     if exe[HELPER_FILEOFF:HELPER_FILEOFF + len(helper)] != helper:
         raise ValueError("embedded helper differs from built helper")
     if macho_uuid(exe) != EXPECTED_UUID:

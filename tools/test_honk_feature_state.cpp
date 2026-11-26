@@ -4,7 +4,7 @@
 #include <cstdint>
 
 int main() {
-    static_assert(sizeof(GooseJumpData) == 1472);
+    static_assert(sizeof(GooseJumpData) == 1488);
     GooseJumpData state{};
     assert(!HonkFeatures::jumpEnabled(&state));
     HonkFeatures::setJumpEnabled(&state, true);
@@ -57,6 +57,22 @@ int main() {
     assert(HonkFeatures::npcTrackingEnabled(&state));
     HonkFeatures::setNpcTrackingEnabled(&state, false);
     assert(!HonkFeatures::npcTrackingEnabled(&state));
+
+    assert(!HonkFeatures::freeCameraEnabled(&state));
+    assert(!HonkFeatures::setFreeCameraEnabled(&state, true));
+    __atomic_store_n(&state.cameraPositionXBits, GooseJumpInput::floatBits(2.0f), __ATOMIC_RELEASE);
+    __atomic_store_n(&state.cameraPositionYBits, GooseJumpInput::floatBits(3.0f), __ATOMIC_RELEASE);
+    __atomic_store_n(&state.cameraPositionZBits, GooseJumpInput::floatBits(4.0f), __ATOMIC_RELEASE);
+    __atomic_store_n(&state.cameraPositionValid, 1u, __ATOMIC_RELEASE);
+    assert(HonkFeatures::setFreeCameraEnabled(&state, true));
+    assert(HonkFeatures::freeCameraEnabled(&state));
+    assert(HonkFeatures::nudgeFreeCamera(&state, 0.5f, -0.5f, 1.0f));
+    assert(GooseJumpInput::bitsFloat(__atomic_load_n(&state.freeCameraXBits, __ATOMIC_ACQUIRE)) == 2.5f);
+    assert(GooseJumpInput::bitsFloat(__atomic_load_n(&state.freeCameraYBits, __ATOMIC_ACQUIRE)) == 2.5f);
+    assert(GooseJumpInput::bitsFloat(__atomic_load_n(&state.freeCameraZBits, __ATOMIC_ACQUIRE)) == 5.0f);
+    assert(!HonkFeatures::nudgeFreeCamera(&state, 100.0f, 0.0f, 0.0f));
+    assert(HonkFeatures::setFreeCameraEnabled(&state, false));
+    assert(!HonkFeatures::freeCameraEnabled(&state));
 
     HonkFeatures::setSpeedFactor(&state, 1.75f);
     assert(std::fabs(HonkFeatures::speedFactor(&state) - 1.75f) < 0.0001f);
