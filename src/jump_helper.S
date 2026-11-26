@@ -1327,6 +1327,11 @@ goose_reloc_color_get_renderers:
     cbz     x0, .Lcolor_capture_next
     str     x0, [sp, #72]
     mov     x1, xzr
+goose_reloc_color_get_shared_material:
+    .inst   0x94000000              // BL Renderer.get_sharedMaterial
+    str     x0, [sp, #88]
+    ldr     x0, [sp, #72]
+    mov     x1, xzr
 goose_reloc_color_get_material:
     .inst   0x94000000              // BL Renderer.get_material
     cbz     x0, .Lcolor_capture_next
@@ -1336,7 +1341,33 @@ goose_reloc_color_string_adrp:
 goose_reloc_color_string_add:
     .inst   0x9100014A              // ADD x10, x10, #lo12(_Color string slot)
     ldr     x1, [x10]
+    cbnz    x1, .Lcolor_capture_read_color
+    // Force Unity's lazy _Color literal initialization only on an instance
+    // material. If Renderer.material returned the shared original, skip this
+    // renderer rather than altering the game's shared material to bootstrap it.
+    ldr     x0, [sp, #80]
+    ldr     x12, [sp, #88]
+    cmp     x0, x12
+    b.eq    .Lcolor_capture_next
+    fmov    s0, #1.0
+    fmov    s1, #1.0
+    fmov    s2, #1.0
+    fmov    s3, #1.0
+    mov     x1, xzr
+goose_reloc_color_material_bootstrap:
+    .inst   0x94000000              // BL Material.set_color(white, instance material)
+goose_reloc_color_string_bootstrap_adrp:
+    .inst   0x9000000A              // ADRP x10, _Color string literal slot
+goose_reloc_color_string_bootstrap_add:
+    .inst   0x9100014A              // ADD x10, x10, #lo12(_Color string slot)
+    ldr     x1, [x10]
     cbz     x1, .Lcolor_capture_next
+    ldr     x0, [sp, #88]           // read baseline from untouched shared material
+    cbz     x0, .Lcolor_capture_next
+    b       .Lcolor_capture_get_color
+.Lcolor_capture_read_color:
+    ldr     x0, [sp, #80]
+.Lcolor_capture_get_color:
     mov     x2, xzr
 goose_reloc_color_get_color:
     .inst   0x94000000              // BL Material.GetColor(string)

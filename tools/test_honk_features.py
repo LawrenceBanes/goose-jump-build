@@ -51,6 +51,8 @@ class HonkMenuPortTests(unittest.TestCase):
         self.assertIn("goose_color_update", HELPER)
         self.assertIn("Material.GetColor(string)", HELPER)
         self.assertIn("Material.set_color", HELPER)
+        self.assertIn("Force Unity's lazy _Color literal initialization", HELPER)
+        self.assertIn("goose_reloc_color_material_bootstrap", HELPER)
         self.assertIn("Transform.set_position", HELPER)
         self.assertIn("goose_reloc_camera_firstperson_get_forward", HELPER)
         self.assertIn("goose_reloc_camera_firstperson_get_rotation", HELPER)

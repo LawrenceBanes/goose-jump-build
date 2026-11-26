@@ -144,6 +144,7 @@ class PatcherTests(unittest.TestCase):
             build.BASE + 0x1E12F78,  # Physics.IgnoreCollision(Collider, Collider, bool)
             build.BASE + 0x2137CF8,  # Component.GetComponentsInChildren<Renderer>(bool)
             build.BASE + 0x1DDE6A4,  # Renderer.get_material
+            build.BASE + 0x1DDE6AC,  # Renderer.get_sharedMaterial
             build.BASE + 0x1DC9670,  # Material.GetColor(string)
             build.BASE + 0x1DC8640,  # Material.set_color
             build.BASE + 0x1E11720,  # Collider.get_enabled (getter only)
