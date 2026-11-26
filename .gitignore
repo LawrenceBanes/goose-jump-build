@@ -1,0 +1,13 @@
+/original/
+/extracted/
+/build/
+*.ipa
+*.dylib
+*.mobileprovision
+*.p12
+*.pfx
+__pycache__/
+*.py[cod]
+.env
+.env.*
+.DS_Store
