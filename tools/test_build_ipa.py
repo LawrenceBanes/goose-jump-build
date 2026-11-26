@@ -54,6 +54,13 @@ class Arm64EncodingTests(unittest.TestCase):
 
 
 class PublicComponentTests(unittest.TestCase):
+    def test_ci_helper_must_match_reproducible_local_build(self):
+        expected = b"pinned helper bytes"
+        self.assertEqual(build.select_helper(expected, expected), expected)
+        self.assertEqual(build.select_helper(None, expected), expected)
+        with self.assertRaisesRegex(ValueError, "differs from deterministic helper"):
+            build.select_helper(b"changed helper", expected)
+
     def test_ios_dylib_validation_checks_platform_and_install_name(self):
         build.validate_dylib(ios_test_dylib())
         with self.assertRaisesRegex(ValueError, "iOS platform"):

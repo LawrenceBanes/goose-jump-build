@@ -211,6 +211,13 @@ def make_helper(temp: Path, clang: str, ld: str, objcopy: str, nm: str) -> bytes
     return patch_helper(raw.read_bytes(), nm_output)
 
 
+def select_helper(candidate: bytes | None, rebuilt: bytes) -> bytes:
+    """Accept a CI helper only when it exactly matches this source/toolchain build."""
+    if candidate is not None and candidate != rebuilt:
+        raise ValueError("CI helper differs from deterministic helper built from checked-in source")
+    return rebuilt if candidate is None else candidate
+
+
 def verify_source_archive() -> tuple[bytes, bytes]:
     if sha256(IPA.read_bytes()) != EXPECTED_IPA_SHA256:
         raise ValueError("original IPA hash mismatch; refusing unsupported binary")
@@ -468,12 +475,7 @@ def main() -> None:
     validate_dylib(dylib)
     with tempfile.TemporaryDirectory(prefix="goose-jump-helper-") as td:
         rebuilt_helper = make_helper(Path(td), args.clang, args.ld, args.objcopy, args.nm)
-    if args.helper:
-        helper = args.helper.read_bytes()
-        if helper != rebuilt_helper:
-            raise ValueError("CI helper differs from deterministic helper built from checked-in source")
-    else:
-        helper = rebuilt_helper
+    helper = select_helper(args.helper.read_bytes() if args.helper else None, rebuilt_helper)
     patched = patch_executable(original, helper)
     validate_patched(patched, helper)
     package(args.out.resolve(), patched, dylib, helper, args.force)
