@@ -41,6 +41,10 @@ goose_reloc_data_add:
     stlr    wzr, [x10]
     add     x10, x22, #HONK_SAVED_VALID_OFFSET
     stlr    wzr, [x10]
+    str     wzr, [x22, #HONK_SCALE_CAPTURED_OFFSET]
+    str     xzr, [x22, #HONK_SCALE_GOOSE_OFFSET]
+    str     wzr, [x22, #HONK_CAMERA_CAPTURED_OFFSET]
+    str     xzr, [x22, #HONK_CAMERA_HELPER_OFFSET]
     str     x19, [x22, #GOOSE_JUMP_LAST_MOVER_OFFSET]
 .Lsame_mover:
     // Apply the UI speed multiplier to the horizontal velocity computed by
