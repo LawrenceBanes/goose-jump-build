@@ -14,4 +14,4 @@ The public workflow does not package or publish a game IPA. Local packaging requ
 
 ## Honk-Menu native controls
 
-The UIKit menu and ARM64 physics helper include the existing jump, movement-speed and teleport tools plus source-implemented Float/Hold Height, optional 0.5×–2× game speed, and 0.5×–2× Goose size controls. These remain private-game runtime modifications: public CI only builds the redistributable dylib/helper and cannot verify gameplay. The parity matrix distinguishes available features from unimplemented upstream tools.
+The UIKit menu and ARM64 helper include jump, movement speed, save/restore position, teleport presets, Float/Hold Height, optional 0.5×–2× game speed, Goose size, follow-camera distance, and NPC shoo suppression. Public CI builds only the redistributable dylib/helper and cannot verify gameplay. The parity matrix distinguishes these implemented controls from upstream features that remain unavailable or need more native object and render-thread support.
