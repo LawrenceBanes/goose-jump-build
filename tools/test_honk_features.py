@@ -128,6 +128,17 @@ class HonkMenuPortTests(unittest.TestCase):
         self.assertIn("str     wzr, [x22, #HONK_SCALE_CAPTURED_OFFSET]", HELPER)
         self.assertIn("str     wzr, [x22, #HONK_CAMERA_CAPTURED_OFFSET]", HELPER)
 
+    def test_component_manifest_lists_all_currently_implemented_honk_actions(self):
+        import sys
+        sys.path.insert(0, str(ROOT / "tools"))
+        import build_components
+        expected = {
+            "follow-camera-distance", "disable-npc-shoo", "npc-size-all-active-bodies",
+            "npc-world-screen-markers", "spawn-and-replace-unity-primitive",
+            "destroy-last-primitive", "experimental-out-of-bounds-teleport",
+        }
+        self.assertTrue(expected.issubset(set(build_components.HONK_MENU_ACTIONS)))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

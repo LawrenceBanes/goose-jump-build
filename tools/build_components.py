@@ -14,6 +14,15 @@ from pathlib import Path
 
 import build_ipa
 
+HONK_MENU_ACTIONS = [
+    "jump-toggle", "jump-impulse", "horizontal-speed", "float-hold-height",
+    "game-speed", "goose-size", "follow-camera-distance", "disable-npc-shoo",
+    "npc-size-all-active-bodies", "npc-world-screen-markers", "save-position",
+    "restore-position", "area-teleport", "practice-teleport",
+    "experimental-out-of-bounds-teleport", "spawn-and-replace-unity-primitive",
+    "destroy-last-primitive",
+]
+
 
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -95,7 +104,7 @@ def main() -> None:
         "host_architecture": platform.machine(),
         "jump_impulse": args.impulse,
         "native_honk_menu": True,
-        "honk_menu_actions": ["jump-toggle", "jump-impulse", "horizontal-speed", "float-hold-height", "game-speed", "goose-size", "npc-size-all-active-bodies", "save-position", "restore-position", "area-teleport", "practice-teleport", "spawn-and-replace-unity-primitive", "destroy-last-primitive"],
+        "honk_menu_actions": HONK_MENU_ACTIONS,
         "helper_file": helper_path.name,
         "helper_sha256": digest(helper_path),
         "helper_size": len(helper),
