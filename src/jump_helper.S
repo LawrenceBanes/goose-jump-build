@@ -428,6 +428,76 @@ goose_reloc_scale_component_transform:
 goose_reloc_transform_set_scale:
     .inst   0x94000000              // BL Transform.set_localScale
 .Lscale_end:
+    // The camera helper follows Goose on the exact target build. Its distance
+    // is consumed by GooseCameraHelper.LateUpdate; derive changes from the
+    // baseline so a slider update never compounds.
+.Lcamera:
+    add     x10, x22, #HONK_CAMERA_FACTOR_OFFSET
+    ldar    w10, [x10]
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lcamera_end
+    fmov    s4, w10
+    str     s4, [sp, #20]
+    fmov    s3, #1.0
+    fcmp    s4, s3
+    b.eq    .Lcamera_restore_check
+    fmov    s3, #0.5
+    fcmp    s4, s3
+    b.lt    .Lcamera_end
+    fmov    s3, #2.0
+    fcmp    s4, s3
+    b.gt    .Lcamera_end
+    b       .Lcamera_ready
+.Lcamera_restore_check:
+    ldr     w10, [x22, #HONK_CAMERA_CAPTURED_OFFSET]
+    cbz     w10, .Lcamera_end
+.Lcamera_ready:
+    cbz     x20, .Lcamera_end
+    ldr     x9, [x20, #0xA0]         // Goose.gooseCameraHelper
+    cbz     x9, .Lcamera_end
+    ldr     x10, [x22, #HONK_CAMERA_HELPER_OFFSET]
+    cmp     x9, x10
+    b.ne    .Lcamera_capture
+    b       .Lcamera_apply
+.Lcamera_capture:
+    ldr     s0, [x9, #0x10]          // GooseCameraHelper.distance
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lcamera_end
+    fmov    s3, wzr
+    fcmp    s0, s3
+    b.le    .Lcamera_end
+    movz    w11, #0xC800
+    movk    w11, #0x42C8, lsl #16  // float 100.0
+    fmov    s3, w11
+    fcmp    s0, s3
+    b.gt    .Lcamera_end
+    str     s0, [x22, #HONK_CAMERA_BASE_DISTANCE_OFFSET]
+    str     x9, [x22, #HONK_CAMERA_HELPER_OFFSET]
+    mov     w10, #1
+    add     x11, x22, #HONK_CAMERA_CAPTURED_OFFSET
+    stlr    w10, [x11]
+.Lcamera_apply:
+    ldr     s0, [x22, #HONK_CAMERA_BASE_DISTANCE_OFFSET]
+    ldr     s4, [sp, #20]
+    fmul    s0, s0, s4
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lcamera_end
+    fmov    s3, wzr
+    fcmp    s0, s3
+    b.le    .Lcamera_end
+    movz    w11, #0xC800
+    movk    w11, #0x42C8, lsl #16  // float 100.0
+    fmov    s3, w11
+    fcmp    s0, s3
+    b.gt    .Lcamera_end
+    ldr     x9, [x22, #HONK_CAMERA_HELPER_OFFSET]
+    str     s0, [x9, #0x10]
+.Lcamera_end:
     ldar    x9, [x22, #GOOSE_JUMP_PENDING_OFFSET]
     cbz     w9, .Lmaybe_maintain_cap
     add     x10, x22, #HONK_FLAGS_OFFSET
@@ -625,3 +695,37 @@ goose_reloc_rb_get_velocity_maintain:
     ret
 
 .size goose_jump_helper, .-goose_jump_helper
+
+// A second static hook handles Body.Update. Reserve a deterministic entry
+// inside the same verified text padding so its patch target is reproducible.
+.space 0x1000 - (. - goose_jump_helper), 0
+.global goose_shoo_guard
+.type goose_shoo_guard, %function
+goose_shoo_guard:
+goose_shoo_reloc_data_adrp:
+    .inst   0x90000009              // ADRP x9, goose_jump_data
+goose_shoo_reloc_data_add:
+    .inst   0x91000129              // ADD x9, x9, #lo12(goose_jump_data)
+    add     x10, x9, #HONK_FLAGS_OFFSET
+    ldar    w10, [x10]
+    tbnz    w10, #2, .Lshoo_disable
+
+    // Honk-Menu uses 100000 as a sentinel. Clear only our own exact sentinel
+    // on disable; preserve ordinary NPC cooldown timestamps.
+    ldr     w11, [x0, #0x90]        // Body.shooReadiness.timeAllowedToShooAgain
+    movz    w12, #0x5000
+    movk    w12, #0x47c3, lsl #16   // float 100000.0
+    cmp     w11, w12
+    b.ne    .Lshoo_resume
+    str     wzr, [x0, #0x90]
+    b       .Lshoo_resume
+.Lshoo_disable:
+    movz    w11, #0x5000
+    movk    w11, #0x47c3, lsl #16   // float 100000.0
+    str     w11, [x0, #0x90]
+.Lshoo_resume:
+goose_reloc_shoo_displaced:
+    .inst   0xA9BE4FF4              // displaced STP x20,x19,[sp,#-0x20]!
+goose_reloc_shoo_continue:
+    .inst   0x14000000              // B Body.Update+4
+.size goose_shoo_guard, .-goose_shoo_guard

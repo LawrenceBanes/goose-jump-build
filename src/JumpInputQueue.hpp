@@ -28,6 +28,10 @@
 #define HONK_BASE_SCALE_X_OFFSET 112
 #define HONK_BASE_SCALE_Y_OFFSET 116
 #define HONK_BASE_SCALE_Z_OFFSET 120
+#define HONK_CAMERA_FACTOR_OFFSET 124
+#define HONK_CAMERA_CAPTURED_OFFSET 128
+#define HONK_CAMERA_HELPER_OFFSET 136
+#define HONK_CAMERA_BASE_DISTANCE_OFFSET 144
 
 #ifndef __ASSEMBLER__
 #include <math.h>
@@ -63,6 +67,10 @@ typedef struct GooseJumpData {
     float baseScaleX;
     float baseScaleY;
     float baseScaleZ;
+    volatile uint32_t cameraFactorBits;
+    volatile uint32_t cameraCaptured;
+    uintptr_t cameraHelper;
+    float cameraBaseDistance;
 } GooseJumpData;
 
 static_assert(offsetof(GooseJumpData, pendingState) == GOOSE_JUMP_PENDING_OFFSET);
@@ -92,6 +100,10 @@ static_assert(offsetof(GooseJumpData, scaleGoose) == HONK_SCALE_GOOSE_OFFSET);
 static_assert(offsetof(GooseJumpData, baseScaleX) == HONK_BASE_SCALE_X_OFFSET);
 static_assert(offsetof(GooseJumpData, baseScaleY) == HONK_BASE_SCALE_Y_OFFSET);
 static_assert(offsetof(GooseJumpData, baseScaleZ) == HONK_BASE_SCALE_Z_OFFSET);
+static_assert(offsetof(GooseJumpData, cameraFactorBits) == HONK_CAMERA_FACTOR_OFFSET);
+static_assert(offsetof(GooseJumpData, cameraCaptured) == HONK_CAMERA_CAPTURED_OFFSET);
+static_assert(offsetof(GooseJumpData, cameraHelper) == HONK_CAMERA_HELPER_OFFSET);
+static_assert(offsetof(GooseJumpData, cameraBaseDistance) == HONK_CAMERA_BASE_DISTANCE_OFFSET);
 
 namespace GooseJumpInput {
 
@@ -165,6 +177,7 @@ static constexpr uint32_t kCommandSavePosition = 1;
 static constexpr uint32_t kCommandRestorePosition = 2;
 static constexpr uint32_t kCommandTeleport = 3;
 static constexpr uint32_t kFloatEnabled = 1u << 1;
+static constexpr uint32_t kDisableNpcShoo = 1u << 2;
 static constexpr float kMinimumSpeedFactor = 0.5f;
 static constexpr float kMaximumSpeedFactor = 3.0f;
 static constexpr float kMinimumJumpImpulse = 0.5f;
@@ -174,6 +187,8 @@ static constexpr float kMinimumTimeScale = 0.5f;
 static constexpr float kMaximumTimeScale = 2.0f;
 static constexpr float kMinimumSizeFactor = 0.5f;
 static constexpr float kMaximumSizeFactor = 2.0f;
+static constexpr float kMinimumCameraFactor = 0.5f;
+static constexpr float kMaximumCameraFactor = 2.0f;
 
 inline bool finiteAndInRange(float value, float absoluteLimit) {
     return isfinite(value) && value >= -absoluteLimit && value <= absoluteLimit;
@@ -230,6 +245,20 @@ inline void setTimeScaleEnabled(GooseJumpData *state, bool enabled) {
     if (state) __atomic_store_n(&state->timeScaleEnabled, enabled ? 1u : 0u, __ATOMIC_RELEASE);
 }
 
+inline bool disableNpcShoo(const GooseJumpData *state) {
+    return state && (__atomic_load_n(&state->featureFlags, __ATOMIC_ACQUIRE) & kDisableNpcShoo) != 0;
+}
+
+inline void setDisableNpcShoo(GooseJumpData *state, bool disabled) {
+    if (!state) return;
+    uint32_t observed = __atomic_load_n(&state->featureFlags, __ATOMIC_ACQUIRE);
+    uint32_t desired;
+    do {
+        desired = disabled ? (observed | kDisableNpcShoo) : (observed & ~kDisableNpcShoo);
+    } while (!__atomic_compare_exchange_n(&state->featureFlags, &observed, desired,
+                                           true, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
+}
+
 inline float boundedFactor(float value, float low, float high, float fallback) {
     if (!isfinite(value)) return fallback;
     if (value < low) return low;
@@ -259,6 +288,18 @@ inline void setSizeFactor(GooseJumpData *state, float value) {
     if (!state) return;
     const float bounded = boundedFactor(value, kMinimumSizeFactor, kMaximumSizeFactor, 1.0f);
     __atomic_store_n(&state->sizeFactorBits, GooseJumpInput::floatBits(bounded), __ATOMIC_RELEASE);
+}
+
+inline float cameraFactor(const GooseJumpData *state) {
+    if (!state) return 1.0f;
+    return boundedFactor(GooseJumpInput::bitsFloat(__atomic_load_n(&state->cameraFactorBits, __ATOMIC_ACQUIRE)),
+                         kMinimumCameraFactor, kMaximumCameraFactor, 1.0f);
+}
+
+inline void setCameraFactor(GooseJumpData *state, float value) {
+    if (!state) return;
+    const float bounded = boundedFactor(value, kMinimumCameraFactor, kMaximumCameraFactor, 1.0f);
+    __atomic_store_n(&state->cameraFactorBits, GooseJumpInput::floatBits(bounded), __ATOMIC_RELEASE);
 }
 
 } // namespace HonkFeatures

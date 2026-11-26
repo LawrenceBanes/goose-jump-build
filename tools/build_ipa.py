@@ -31,8 +31,13 @@ BASE = 0x100000000
 HOOK_VA = 0x1011107E4
 HOOK_FILEOFF = 0x11107E4
 HOOK_ORIGINAL = 0xF9400A74  # ldr x20, [x19, #16]
+SHOO_HOOK_VA = 0x10107D13C
+SHOO_HOOK_FILEOFF = 0x107D13C
+SHOO_HOOK_ORIGINAL = 0xA9BE4FF4  # stp x20, x19, [sp, #-0x20]!
+CAMERA_LATEUPDATE_VA = 0x1010C8D88
 HELPER_VA = 0x1026F0C20
 HELPER_FILEOFF = 0x26F0C20
+SHOO_GUARD_VA = HELPER_VA + 0x1000
 CODE_END_VA = 0x1026F4000
 DATA_VA = 0x102E1B000
 DATA_SIZE = 0x1000
@@ -73,6 +78,9 @@ RELOCS = {
     "goose_reloc_set_time_scale": ("bl", BASE + 0x1DEA040, None),
     "goose_reloc_restore_get_time_scale": ("bl", BASE + 0x1DE9FE0, None),
     "goose_reloc_restore_time_scale": ("bl", BASE + 0x1DEA040, None),
+    "goose_shoo_reloc_data_adrp": ("adrp", DATA_VA, 9),
+    "goose_shoo_reloc_data_add": ("add", DATA_VA, 9),
+    "goose_reloc_shoo_continue": ("b", SHOO_HOOK_VA + 4, None),
 }
 
 
@@ -85,6 +93,13 @@ def encode_bl(pc: int, target: int) -> int:
     if delta & 3 or not -(1 << 27) <= delta < (1 << 27):
         raise ValueError(f"BL target out of range or unaligned: {pc:#x} -> {target:#x}")
     return 0x94000000 | ((delta >> 2) & 0x03FFFFFF)
+
+
+def encode_b(pc: int, target: int) -> int:
+    delta = target - pc
+    if delta & 3 or not -(1 << 27) <= delta < (1 << 27):
+        raise ValueError(f"B target out of range or unaligned: {pc:#x} -> {target:#x}")
+    return 0x14000000 | ((delta >> 2) & 0x03FFFFFF)
 
 
 def encode_adrp(rd: int, pc: int, target: int) -> int:
@@ -193,18 +208,27 @@ def patch_helper(blob: bytes, nm_output: str) -> bytes:
             names[m.group(2)] = int(m.group(1), 16)
     if names.get("goose_jump_helper") != HELPER_VA:
         raise ValueError("helper link address differs from pinned code cave")
+    if names.get("goose_shoo_guard") != SHOO_GUARD_VA:
+        raise ValueError("NPC shoo guard is not at its reserved helper address")
     out = bytearray(blob)
+    displaced = names.get("goose_reloc_shoo_displaced")
+    if displaced is None or struct.unpack_from("<I", out, displaced - HELPER_VA)[0] != SHOO_HOOK_ORIGINAL:
+        raise ValueError("NPC shoo helper does not preserve the verified displaced instruction")
     for symbol, (kind, target, reg) in RELOCS.items():
         if symbol not in names:
             raise ValueError(f"missing helper relocation marker: {symbol}")
         at = names[symbol] - HELPER_VA
         if at < 0 or at + 4 > len(out) or at & 3:
             raise ValueError(f"invalid helper relocation location: {symbol}")
-        expected = {"bl": 0x94000000, "adrp": 0x90000016, "add": 0x910002D6}[kind]
+        expected = {"bl": 0x94000000, "b": 0x14000000,
+                    "adrp": 0x90000000 | (reg or 0),
+                    "add": 0x91000000 | ((reg or 0) << 5) | (reg or 0)}[kind]
         if struct.unpack_from("<I", out, at)[0] != expected:
             raise ValueError(f"helper relocation placeholder mismatch: {symbol}")
         if kind == "bl":
             word = encode_bl(names[symbol], target)
+        elif kind == "b":
+            word = encode_b(names[symbol], target)
         elif kind == "adrp":
             word = encode_adrp(reg, names[symbol], target)
         else:
@@ -298,13 +322,21 @@ def patch_executable(original: bytes, helper: bytes) -> bytes:
         raise ValueError("helper does not fit in verified padding")
     if len(helper) < 16 or struct.unpack_from("<I", helper, 12)[0] != HOOK_ORIGINAL:
         raise ValueError("helper does not replay the displaced instruction")
+    if len(helper) < 0x1000 + 24:
+        raise ValueError("NPC shoo guard is missing from the helper")
     if original[HELPER_FILEOFF:0x26F4000] != b"\0" * (0x26F4000 - HELPER_FILEOFF):
         raise ValueError("code cave is not all zero; refusing to overwrite")
     if struct.unpack_from("<I", original, HOOK_FILEOFF)[0] != HOOK_ORIGINAL:
         raise ValueError("hook instruction mismatch; refusing unsupported binary")
+    if struct.unpack_from("<I", original, SHOO_HOOK_FILEOFF)[0] != SHOO_HOOK_ORIGINAL:
+        raise ValueError("NPC Body.Update instruction mismatch; refusing unsupported binary")
+    if SHOO_HOOK_VA not in info["function_starts"]:
+        raise ValueError("NPC Body.Update hook is not a verified function start")
     out = bytearray(original)
     out[HELPER_FILEOFF:HELPER_FILEOFF + len(helper)] = helper
     struct.pack_into("<I", out, HOOK_FILEOFF, encode_bl(HOOK_VA, HELPER_VA))
+    struct.pack_into("<I", out, SHOO_HOOK_FILEOFF,
+                     encode_b(SHOO_HOOK_VA, SHOO_GUARD_VA))
     patch_load_commands(out)
     return bytes(out)
 
@@ -389,6 +421,8 @@ def validate_patched(exe: bytes, helper: bytes) -> None:
         raise ValueError("patched executable header changed unexpectedly")
     if struct.unpack_from("<I", exe, HOOK_FILEOFF)[0] != encode_bl(HOOK_VA, HELPER_VA):
         raise ValueError("patched call site does not branch to helper")
+    if struct.unpack_from("<I", exe, SHOO_HOOK_FILEOFF)[0] != encode_b(SHOO_HOOK_VA, SHOO_GUARD_VA):
+        raise ValueError("NPC Body.Update does not branch to shoo guard")
     if exe[HELPER_FILEOFF:HELPER_FILEOFF + len(helper)] != helper:
         raise ValueError("embedded helper differs from built helper")
     if macho_uuid(exe) != EXPECTED_UUID:

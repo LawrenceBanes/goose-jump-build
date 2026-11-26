@@ -4,7 +4,7 @@
 #include <cstdint>
 
 int main() {
-    static_assert(sizeof(GooseJumpData) == 128);
+    static_assert(sizeof(GooseJumpData) == 152);
     GooseJumpData state{};
     assert(!HonkFeatures::jumpEnabled(&state));
     HonkFeatures::setJumpEnabled(&state, true);
@@ -17,6 +17,11 @@ int main() {
     assert(HonkFeatures::hoverEnabled(&state));
     HonkFeatures::setHoverEnabled(&state, false);
     assert(!HonkFeatures::hoverEnabled(&state));
+    assert(!HonkFeatures::disableNpcShoo(&state));
+    HonkFeatures::setDisableNpcShoo(&state, true);
+    assert(HonkFeatures::disableNpcShoo(&state));
+    HonkFeatures::setDisableNpcShoo(&state, false);
+    assert(!HonkFeatures::disableNpcShoo(&state));
 
     HonkFeatures::setTimeScale(&state, 1.25f);
     assert(std::fabs(HonkFeatures::timeScale(&state) - 1.25f) < 0.0001f);
@@ -37,6 +42,10 @@ int main() {
     assert(std::fabs(HonkFeatures::sizeFactor(&state) - HonkFeatures::kMaximumSizeFactor) < 0.0001f);
     HonkFeatures::setSizeFactor(&state, INFINITY);
     assert(std::fabs(HonkFeatures::sizeFactor(&state) - 1.0f) < 0.0001f);
+    HonkFeatures::setCameraFactor(&state, 1.5f);
+    assert(std::fabs(HonkFeatures::cameraFactor(&state) - 1.5f) < 0.0001f);
+    HonkFeatures::setCameraFactor(&state, 8.0f);
+    assert(std::fabs(HonkFeatures::cameraFactor(&state) - HonkFeatures::kMaximumCameraFactor) < 0.0001f);
 
     HonkFeatures::setSpeedFactor(&state, 1.75f);
     assert(std::fabs(HonkFeatures::speedFactor(&state) - 1.75f) < 0.0001f);

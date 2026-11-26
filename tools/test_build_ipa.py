@@ -40,6 +40,13 @@ class Arm64EncodingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build.encode_bl(0x1000, 0x1002)
 
+    def test_b_encodes_npc_hook_and_rejects_unaligned_targets(self):
+        word = build.encode_b(build.SHOO_HOOK_VA, build.SHOO_GUARD_VA)
+        self.assertEqual(word >> 26, 0b000101)
+        self.assertEqual(build.SHOO_HOOK_VA + ((word & 0x03FFFFFF) << 2), build.SHOO_GUARD_VA)
+        with self.assertRaises(ValueError):
+            build.encode_b(0x1000, 0x1002)
+
     def test_adrp_and_add_reconstruct_data_address(self):
         pc = 0x1026F0C30
         target = build.DATA_VA
@@ -88,6 +95,8 @@ class PatcherTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.original = (ROOT / "extracted/Payload/untitledgooseport.app/untitledgooseport").read_bytes()
+        with tempfile.TemporaryDirectory(prefix="goose-helper-fixture-") as temp:
+            cls.helper = build.make_helper(Path(temp), "clang", "ld.lld", "llvm-objcopy", "llvm-nm")
 
     def test_rejects_wrong_source_hash(self):
         with self.assertRaisesRegex(ValueError, "hash mismatch"):
@@ -108,9 +117,9 @@ class PatcherTests(unittest.TestCase):
             build.BASE + 0x1DEB8E0,  # Transform.set_localScale
         }
         self.assertTrue(required.issubset(starts))
-        with tempfile.TemporaryDirectory() as temp:
-            helper = build.make_helper(Path(temp), "clang", "ld.lld", "llvm-objcopy", "llvm-nm")
-        self.assertLessEqual(len(helper), build.CODE_END_VA - build.HELPER_VA)
+        self.assertIn(build.CAMERA_LATEUPDATE_VA, starts)
+        self.assertIn(build.SHOO_HOOK_VA, starts)
+        self.assertLessEqual(len(self.helper), build.CODE_END_VA - build.HELPER_VA)
 
     def test_package_never_targets_original_or_extracted_inputs(self):
         for protected in (build.IPA, ROOT / "extracted/Payload/untitledgooseport.app/untitledgooseport"):
@@ -120,29 +129,35 @@ class PatcherTests(unittest.TestCase):
             build.package(Path("/tmp/goose-jump-forbidden.ipa"), b"", b"", b"", force=True)
 
     def test_patched_copy_declares_sections_and_load_command(self):
-        helper = bytes.fromhex("ff8300d1f60b00f9fe0f00f9740a40f9")
+        helper = self.helper
         patched = build.patch_executable(self.original, helper)
         build.validate_patched(patched, helper)
         self.assertEqual(struct.unpack_from("<I", patched, build.HOOK_FILEOFF)[0],
                          build.encode_bl(build.HOOK_VA, build.HELPER_VA))
+        self.assertEqual(struct.unpack_from("<I", patched, build.SHOO_HOOK_FILEOFF)[0],
+                         build.encode_b(build.SHOO_HOOK_VA, build.SHOO_GUARD_VA))
+        self.assertEqual(struct.unpack_from("<I", self.helper, 0x1000 + 64)[0],
+                         build.encode_b(build.SHOO_GUARD_VA + 64, build.SHOO_HOOK_VA + 4))
         self.assertEqual(self.original[build.HOOK_FILEOFF:build.HOOK_FILEOFF + 4],
                          struct.pack("<I", build.HOOK_ORIGINAL))
+        self.assertEqual(self.original[build.SHOO_HOOK_FILEOFF:build.SHOO_HOOK_FILEOFF + 4],
+                         struct.pack("<I", build.SHOO_HOOK_ORIGINAL))
 
     def test_rejects_duplicate_patch(self):
-        helper = bytes.fromhex("ff8300d1f60b00f9fe0f00f9740a40f9")
+        helper = self.helper
         patched = build.patch_executable(self.original, helper)
         with self.assertRaisesRegex(ValueError, "hash mismatch"):
             build.patch_executable(patched, helper)
 
     def test_patched_output_is_reproducible_and_keeps_uuid(self):
-        helper = bytes.fromhex("ff8300d1f60b00f9fe0f00f9740a40f9")
+        helper = self.helper
         first = build.patch_executable(self.original, helper)
         second = build.patch_executable(self.original, helper)
         self.assertEqual(first, second)
         self.assertEqual(build.macho_uuid(first), build.EXPECTED_UUID)
 
     def test_ipa_validation_checks_structure_arch_dependency_and_assets(self):
-        helper = bytes.fromhex("ff8300d1f60b00f9fe0f00f9740a40f9")
+        helper = self.helper
         patched = build.patch_executable(self.original, helper)
         dylib = ios_test_dylib()
         tmp = Path(tempfile.mkdtemp(prefix="goose-ipa-validation-"))

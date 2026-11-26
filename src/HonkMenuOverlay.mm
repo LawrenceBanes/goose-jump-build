@@ -45,6 +45,7 @@ static UILabel *gHonkImpulseValue;
 static UILabel *gHonkSpeedValue;
 static UILabel *gHonkTimeScaleValue;
 static UILabel *gHonkSizeValue;
+static UILabel *gHonkCameraValue;
 static NSTimer *gHonkRefresh;
 static NSInteger gSelectedPage = 0;
 
@@ -156,6 +157,7 @@ static UISlider *HonkSlider(UIStackView *stack, NSString *title, float min, floa
         case 2: valueLabel.text = [NSString stringWithFormat:@"%.1f units/s", value]; break;
         case 6: valueLabel.text = [NSString stringWithFormat:@"%.2fx", value]; break;
         case 7: valueLabel.text = [NSString stringWithFormat:@"%.0f%%", value * 100.0f]; break;
+        case 8: valueLabel.text = [NSString stringWithFormat:@"%.0f%%", value * 100.0f]; break;
         default: valueLabel.text = [NSString stringWithFormat:@"%.0f%%", value * 100.0f]; break;
     }
     [row addArrangedSubview:valueLabel];
@@ -164,6 +166,7 @@ static UISlider *HonkSlider(UIStackView *stack, NSString *title, float min, floa
     if (tag == 3) gHonkSpeedValue = valueLabel;
     if (tag == 6) gHonkTimeScaleValue = valueLabel;
     if (tag == 7) gHonkSizeValue = valueLabel;
+    if (tag == 8) gHonkCameraValue = valueLabel;
     return slider;
 }
 
@@ -245,6 +248,9 @@ static void HonkBuildMovementPage(void) {
                HonkFeatures::kMaximumTimeScale, HonkFeatures::timeScale(gHonkState), 6);
     HonkSlider(gHonkContent, @"Goose size", HonkFeatures::kMinimumSizeFactor,
                HonkFeatures::kMaximumSizeFactor, HonkFeatures::sizeFactor(gHonkState), 7);
+    HonkAddRow(gHonkContent, HonkLabel(@"Camera", UIFontWeightBold, 17, UIColor.systemTealColor));
+    HonkSlider(gHonkContent, @"Follow camera distance", HonkFeatures::kMinimumCameraFactor,
+               HonkFeatures::kMaximumCameraFactor, HonkFeatures::cameraFactor(gHonkState), 8);
     HonkAddUnavailable(@"Noclip", @"this build exposes no verified reversible Collider setter; world collision remains enabled");
 }
 
@@ -266,12 +272,29 @@ static void HonkBuildPage(NSInteger page) {
         case 0: HonkBuildMovementPage(); break;
         case 1: HonkBuildTeleportPage(); break;
         case 2:
-            HonkAddUnavailable(@"First-person camera", @"camera rig and goose camera lifecycle need a verified native mapping");
+            HonkAddUnavailable(@"First-person camera", @"the game camera uses a follow rig; switching camera modes is not mapped");
             HonkAddUnavailable(@"Magic / free camera", @"creating and managing Unity cameras from native code is not implemented");
             HonkAddUnavailable(@"Teleport goose to camera", @"depends on the unavailable free-camera feature");
+            HonkAddRow(gHonkContent, HonkLabel(@"Follow camera distance is available under Move → Camera.", UIFontWeightRegular, 12, UIColor.lightTextColor));
             break;
         case 3:
-            HonkAddUnavailable(@"Disable shoo / NPC tracking", @"NPC brain objects and safe per-scene state restoration are not mapped");
+            {
+            UISwitch *disableShoo = [[UISwitch alloc] init];
+            disableShoo.tag = 9;
+            disableShoo.on = HonkFeatures::disableNpcShoo(gHonkState);
+            disableShoo.multipleTouchEnabled = YES;
+            disableShoo.exclusiveTouch = NO;
+            [disableShoo addTarget:[NSClassFromString(@"HonkMenuOverlay") class]
+                            action:@selector(settingChanged:) forControlEvents:UIControlEventValueChanged];
+            UIStackView *shooRow = [[UIStackView alloc] init];
+            shooRow.axis = UILayoutConstraintAxisHorizontal;
+            shooRow.alignment = UIStackViewAlignmentCenter;
+            shooRow.distribution = UIStackViewDistributionEqualSpacing;
+            [shooRow addArrangedSubview:HonkLabel(@"Disable NPC shoo", UIFontWeightSemibold, 15, UIColor.whiteColor)];
+            [shooRow addArrangedSubview:disableShoo];
+            HonkAddRow(gHonkContent, shooRow);
+            HonkAddRow(gHonkContent, HonkLabel(@"Prevents the goose-shoo cooldown from advancing while enabled. Existing NPC behavior resumes when disabled.", UIFontWeightRegular, 12, UIColor.lightTextColor));
+            }
             HonkAddUnavailable(@"NPC resize / manipulation", @"NPC transforms and original state capture are not verified");
             break;
         case 4:
@@ -316,6 +339,8 @@ static void HonkBuildPage(NSInteger page) {
     NSNumber *timeEnabledPreference = [defaults objectForKey:@"HonkMenu.TimeScaleEnabled"];
     NSNumber *timeScalePreference = [defaults objectForKey:@"HonkMenu.TimeScale"];
     NSNumber *sizePreference = [defaults objectForKey:@"HonkMenu.SizeFactor"];
+    NSNumber *cameraPreference = [defaults objectForKey:@"HonkMenu.CameraFactor"];
+    NSNumber *shooPreference = [defaults objectForKey:@"HonkMenu.DisableNpcShoo"];
     HonkFeatures::setJumpEnabled(gHonkState, jumpPreference ? jumpPreference.boolValue : true);
     HonkFeatures::setJumpImpulse(gHonkState, impulsePreference ? impulsePreference.floatValue : HonkReadJumpImpulse());
     HonkFeatures::setSpeedFactor(gHonkState, speedPreference ? speedPreference.floatValue : 1.0f);
@@ -323,6 +348,8 @@ static void HonkBuildPage(NSInteger page) {
     HonkFeatures::setTimeScale(gHonkState, timeScalePreference ? timeScalePreference.floatValue : 1.0f);
     HonkFeatures::setTimeScaleEnabled(gHonkState, timeEnabledPreference ? timeEnabledPreference.boolValue : false);
     HonkFeatures::setSizeFactor(gHonkState, sizePreference ? sizePreference.floatValue : 1.0f);
+    HonkFeatures::setCameraFactor(gHonkState, cameraPreference ? cameraPreference.floatValue : 1.0f);
+    HonkFeatures::setDisableNpcShoo(gHonkState, shooPreference ? shooPreference.boolValue : false);
 
     if (gHonkRoot && gHonkRoot.superview == root) {
         [self refresh];
@@ -481,6 +508,10 @@ static void HonkBuildPage(NSInteger page) {
                 HonkFeatures::setTimeScaleEnabled(gHonkState, enabled);
                 [NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"HonkMenu.TimeScaleEnabled"];
                 break;
+            case 9:
+                HonkFeatures::setDisableNpcShoo(gHonkState, enabled);
+                [NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"HonkMenu.DisableNpcShoo"];
+                break;
         }
     } else if ([sender isKindOfClass:UISlider.class]) {
         UISlider *slider = (UISlider *)sender;
@@ -500,6 +531,10 @@ static void HonkBuildPage(NSInteger page) {
             HonkFeatures::setSizeFactor(gHonkState, slider.value);
             gHonkSizeValue.text = [NSString stringWithFormat:@"%.0f%%", slider.value * 100.0f];
             [NSUserDefaults.standardUserDefaults setFloat:slider.value forKey:@"HonkMenu.SizeFactor"];
+        } else if (slider.tag == 8) {
+            HonkFeatures::setCameraFactor(gHonkState, slider.value);
+            gHonkCameraValue.text = [NSString stringWithFormat:@"%.0f%%", slider.value * 100.0f];
+            [NSUserDefaults.standardUserDefaults setFloat:slider.value forKey:@"HonkMenu.CameraFactor"];
         }
     }
 }

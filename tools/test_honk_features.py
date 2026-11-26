@@ -33,10 +33,12 @@ class HonkMenuPortTests(unittest.TestCase):
         self.assertIn("Unavailable in this build", MENU)
         self.assertIn("Collision stays enabled; this is not noclip", MENU)
         self.assertIn("this build exposes no verified reversible Collider setter", MENU)
-        for supported in ("Float / hold height", "Custom game speed", "Goose size"):
+        for supported in ("Float / hold height", "Custom game speed", "Goose size",
+                          "Follow camera distance", "Disable NPC shoo"):
             self.assertIn(supported, MENU)
         for key in ("HonkMenu.FloatEnabled", "HonkMenu.TimeScaleEnabled",
-                    "HonkMenu.TimeScale", "HonkMenu.SizeFactor"):
+                    "HonkMenu.TimeScale", "HonkMenu.SizeFactor", "HonkMenu.CameraFactor",
+                    "HonkMenu.DisableNpcShoo"):
             self.assertIn(key, MENU)
 
     def test_ui_dispatches_commands_without_calling_unity(self):
@@ -88,6 +90,18 @@ class HonkMenuPortTests(unittest.TestCase):
         self.assertIn("UnityEngine.Time.set_timeScale", HELPER)
         self.assertIn("Transform.set_localScale", HELPER)
         self.assertIn("Rigidbody.set_velocity", HELPER)
+
+    def test_camera_and_npc_shoo_hooks_use_pinned_mappings(self):
+        import sys
+        sys.path.insert(0, str(ROOT / "tools"))
+        import build_ipa
+        self.assertEqual(build_ipa.SHOO_HOOK_VA, 0x10107D13C)
+        self.assertEqual(build_ipa.SHOO_HOOK_ORIGINAL, 0xA9BE4FF4)
+        self.assertEqual(build_ipa.SHOO_GUARD_VA, build_ipa.HELPER_VA + 0x1000)
+        self.assertIn("Goose.gooseCameraHelper", HELPER)
+        self.assertIn("GooseCameraHelper.distance", HELPER)
+        self.assertIn("Body.shooReadiness.timeAllowedToShooAgain", HELPER)
+        self.assertIn("goose_reloc_shoo_continue", HELPER)
 
 
 if __name__ == "__main__":
