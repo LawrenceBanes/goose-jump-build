@@ -101,13 +101,15 @@ static UIButton *HonkButton(NSString *title, NSInteger tag, id target, SEL actio
     UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
     button.tag = tag;
     button.translatesAutoresizingMaskIntoConstraints = NO;
-    button.contentEdgeInsets = UIEdgeInsetsMake(9, 12, 9, 12);
-    button.backgroundColor = [UIColor colorWithWhite:0.14 alpha:0.94];
-    button.layer.cornerRadius = 11;
+    UIButtonConfiguration *configuration = [UIButtonConfiguration plainButtonConfiguration];
+    configuration.contentInsets = NSDirectionalEdgeInsetsMake(9, 12, 9, 12);
+    configuration.baseForegroundColor = UIColor.whiteColor;
+    configuration.background.backgroundColor = [UIColor colorWithWhite:0.14 alpha:0.94];
+    configuration.background.cornerRadius = 11;
+    button.configuration = configuration;
     button.layer.borderWidth = 1;
     button.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.18].CGColor;
     [button setTitle:title forState:UIControlStateNormal];
-    [button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
     button.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
     button.multipleTouchEnabled = YES;
     button.exclusiveTouch = NO;
@@ -131,7 +133,7 @@ static void HonkAddRow(UIStackView *stack, UIView *view) {
 }
 
 static UISlider *HonkSlider(UIStackView *stack, NSString *title, float min, float max,
-                            float value, NSInteger tag, UILabel **outValueLabel) {
+                            float value, NSInteger tag) {
     UIStackView *row = [[UIStackView alloc] init];
     row.axis = UILayoutConstraintAxisVertical;
     row.spacing = 5;
@@ -152,7 +154,8 @@ static UISlider *HonkSlider(UIStackView *stack, NSString *title, float min, floa
                               : [NSString stringWithFormat:@"%.0f%%", value * 100.0f];
     [row addArrangedSubview:valueLabel];
     HonkAddRow(stack, row);
-    if (outValueLabel) *outValueLabel = valueLabel;
+    if (tag == 2) gHonkImpulseValue = valueLabel;
+    if (tag == 3) gHonkSpeedValue = valueLabel;
     return slider;
 }
 
@@ -196,9 +199,9 @@ static void HonkBuildMovementPage(void) {
     HonkAddRow(gHonkContent, jumpRow);
 
     HonkSlider(gHonkContent, @"Jump impulse", HonkFeatures::kMinimumJumpImpulse,
-               HonkFeatures::kMaximumJumpImpulse, HonkReadJumpImpulse(), 2, &gHonkImpulseValue);
+               HonkFeatures::kMaximumJumpImpulse, HonkReadJumpImpulse(), 2);
     HonkSlider(gHonkContent, @"Horizontal speed", HonkFeatures::kMinimumSpeedFactor,
-               HonkFeatures::kMaximumSpeedFactor, HonkFeatures::speedFactor(gHonkState), 3, &gHonkSpeedValue);
+               HonkFeatures::kMaximumSpeedFactor, HonkFeatures::speedFactor(gHonkState), 3);
     UIButton *save = HonkButton(@"Save goose position", 1, [NSClassFromString(@"HonkMenuOverlay") class], @selector(menuAction:));
     UIButton *restore = HonkButton(@"Restore saved position", 2, [NSClassFromString(@"HonkMenuOverlay") class], @selector(menuAction:));
     HonkAddRow(gHonkContent, save);
