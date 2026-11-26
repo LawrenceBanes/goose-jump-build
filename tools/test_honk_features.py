@@ -102,6 +102,8 @@ class HonkMenuPortTests(unittest.TestCase):
         self.assertIn("GooseCameraHelper.distance", HELPER)
         self.assertIn("Body.shooReadiness.timeAllowedToShooAgain", HELPER)
         self.assertIn("goose_reloc_shoo_continue", HELPER)
+        self.assertIn("str     wzr, [x22, #HONK_SCALE_CAPTURED_OFFSET]", HELPER)
+        self.assertIn("str     wzr, [x22, #HONK_CAMERA_CAPTURED_OFFSET]", HELPER)
 
 
 if __name__ == "__main__":
