@@ -4,7 +4,7 @@
 #include <cstdint>
 
 int main() {
-    static_assert(sizeof(GooseJumpData) == 152);
+    static_assert(sizeof(GooseJumpData) == 1456);
     GooseJumpData state{};
     assert(!HonkFeatures::jumpEnabled(&state));
     HonkFeatures::setJumpEnabled(&state, true);
@@ -46,6 +46,17 @@ int main() {
     assert(std::fabs(HonkFeatures::cameraFactor(&state) - 1.5f) < 0.0001f);
     HonkFeatures::setCameraFactor(&state, 8.0f);
     assert(std::fabs(HonkFeatures::cameraFactor(&state) - HonkFeatures::kMaximumCameraFactor) < 0.0001f);
+    HonkFeatures::setNpcSizeFactor(&state, 1.5f);
+    assert(std::fabs(HonkFeatures::npcSizeFactor(&state) - 1.5f) < 0.0001f);
+    HonkFeatures::setNpcSizeFactor(&state, 10.0f);
+    assert(std::fabs(HonkFeatures::npcSizeFactor(&state) - HonkFeatures::kMaximumNpcSizeFactor) < 0.0001f);
+    HonkFeatures::setNpcSizeFactor(&state, NAN);
+    assert(std::fabs(HonkFeatures::npcSizeFactor(&state) - 1.0f) < 0.0001f);
+    assert(!HonkFeatures::npcTrackingEnabled(&state));
+    HonkFeatures::setNpcTrackingEnabled(&state, true);
+    assert(HonkFeatures::npcTrackingEnabled(&state));
+    HonkFeatures::setNpcTrackingEnabled(&state, false);
+    assert(!HonkFeatures::npcTrackingEnabled(&state));
 
     HonkFeatures::setSpeedFactor(&state, 1.75f);
     assert(std::fabs(HonkFeatures::speedFactor(&state) - 1.75f) < 0.0001f);
@@ -75,4 +86,12 @@ int main() {
     assert(!HonkFeatures::publishCommand(&state, 0));
     assert(HonkFeatures::publishCommand(&state, HonkFeatures::kCommandSavePosition));
     assert(__atomic_load_n(&state.command, __ATOMIC_ACQUIRE) == HonkFeatures::kCommandSavePosition);
+    for (uint32_t command = HonkFeatures::kCommandCreateSphere;
+         command <= HonkFeatures::kCommandCreateCube; ++command) {
+        assert(HonkFeatures::publishCommand(&state, command));
+        assert(__atomic_load_n(&state.command, __ATOMIC_ACQUIRE) == command);
+    }
+    assert(HonkFeatures::publishCommand(&state, HonkFeatures::kCommandDestroySpawned));
+    assert(__atomic_load_n(&state.command, __ATOMIC_ACQUIRE) == HonkFeatures::kCommandDestroySpawned);
+    assert(!HonkFeatures::publishCommand(&state, HonkFeatures::kCommandDestroySpawned + 1));
 }

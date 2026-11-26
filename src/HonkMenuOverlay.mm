@@ -46,10 +46,15 @@ static UILabel *gHonkSpeedValue;
 static UILabel *gHonkTimeScaleValue;
 static UILabel *gHonkSizeValue;
 static UILabel *gHonkCameraValue;
+static UILabel *gHonkNpcSizeValue;
+static UIView *gHonkNpcOverlay;
 static NSTimer *gHonkRefresh;
 static NSInteger gSelectedPage = 0;
 
 @interface HonkPassthroughView : UIView
+@end
+
+@interface HonkNpcOverlayView : UIView
 @end
 
 @interface HonkMenuOverlay : NSObject
@@ -65,6 +70,37 @@ static NSInteger gSelectedPage = 0;
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *hit = [super hitTest:point withEvent:event];
     return hit == self ? nil : hit;
+}
+@end
+
+@implementation HonkNpcOverlayView
+- (void)drawRect:(CGRect)rect {
+    (void)rect;
+    if (!HonkFeatures::npcTrackingEnabled(gHonkState)) return;
+    const uint32_t width = __atomic_load_n(&gHonkState->npcScreenWidth, __ATOMIC_ACQUIRE);
+    const uint32_t height = __atomic_load_n(&gHonkState->npcScreenHeight, __ATOMIC_ACQUIRE);
+    if (!width || !height) return;
+    const CGSize size = self.bounds.size;
+    NSDictionary *attributes = @{
+        NSFontAttributeName: [UIFont systemFontOfSize:11 weight:UIFontWeightBold],
+        NSForegroundColorAttributeName: UIColor.systemRedColor,
+    };
+    for (uint32_t i = 0; i < HONK_NPC_SCALE_ENTRY_COUNT; ++i) {
+        const HonkNpcScaleEntry &entry = gHonkState->npcScaleEntries[i];
+        if (!__atomic_load_n(&entry.body, __ATOMIC_ACQUIRE) ||
+            !__atomic_load_n(&entry.visible, __ATOMIC_ACQUIRE)) continue;
+        const float sx = GooseJumpInput::bitsFloat(
+            __atomic_load_n(reinterpret_cast<const uint32_t *>(&entry.screenX), __ATOMIC_ACQUIRE));
+        const float sy = GooseJumpInput::bitsFloat(
+            __atomic_load_n(reinterpret_cast<const uint32_t *>(&entry.screenY), __ATOMIC_ACQUIRE));
+        if (!std::isfinite(sx) || !std::isfinite(sy)) continue;
+        const CGFloat x = sx * size.width / width;
+        const CGFloat y = (height - sy) * size.height / height;
+        CGRect dot = CGRectMake(x - 4, y - 4, 8, 8);
+        [UIColor.systemRedColor setFill];
+        [[UIBezierPath bezierPathWithOvalInRect:dot] fill];
+        [@"NPC" drawAtPoint:CGPointMake(x + 6, y - 8) withAttributes:attributes];
+    }
 }
 @end
 
@@ -167,6 +203,7 @@ static UISlider *HonkSlider(UIStackView *stack, NSString *title, float min, floa
     if (tag == 6) gHonkTimeScaleValue = valueLabel;
     if (tag == 7) gHonkSizeValue = valueLabel;
     if (tag == 8) gHonkCameraValue = valueLabel;
+    if (tag == 11) gHonkNpcSizeValue = valueLabel;
     return slider;
 }
 
@@ -251,6 +288,7 @@ static void HonkBuildMovementPage(void) {
     HonkAddRow(gHonkContent, HonkLabel(@"Camera", UIFontWeightBold, 17, UIColor.systemTealColor));
     HonkSlider(gHonkContent, @"Follow camera distance", HonkFeatures::kMinimumCameraFactor,
                HonkFeatures::kMaximumCameraFactor, HonkFeatures::cameraFactor(gHonkState), 8);
+    HonkAddUnavailable(@"Noclip", @"Scene collider pairs are not yet enumerated safely; world collision remains enabled");
     HonkAddUnavailable(@"Noclip", @"this build exposes no verified reversible Collider setter; world collision remains enabled");
 }
 
@@ -295,7 +333,26 @@ static void HonkBuildPage(NSInteger page) {
             HonkAddRow(gHonkContent, shooRow);
             HonkAddRow(gHonkContent, HonkLabel(@"Prevents the goose-shoo cooldown from advancing while enabled. Existing NPC behavior resumes when disabled.", UIFontWeightRegular, 12, UIColor.lightTextColor));
             }
-            HonkAddUnavailable(@"NPC resize / manipulation", @"NPC transforms and original state capture are not verified");
+            HonkSlider(gHonkContent, @"NPC size (active people)", HonkFeatures::kMinimumNpcSizeFactor,
+                       HonkFeatures::kMaximumNpcSizeFactor, HonkFeatures::npcSizeFactor(gHonkState), 11);
+            HonkAddRow(gHonkContent, HonkLabel(@"Scales each live Body from its captured original transform. Reset to 100% to restore. The table covers up to 32 active people and resets when the goose scene instance changes.", UIFontWeightRegular, 12, UIColor.lightTextColor));
+            {
+                UISwitch *tracking = [[UISwitch alloc] init];
+                tracking.tag = 12;
+                tracking.on = HonkFeatures::npcTrackingEnabled(gHonkState);
+                tracking.multipleTouchEnabled = YES;
+                tracking.exclusiveTouch = NO;
+                [tracking addTarget:[NSClassFromString(@"HonkMenuOverlay") class]
+                             action:@selector(settingChanged:) forControlEvents:UIControlEventValueChanged];
+                UIStackView *trackingRow = [[UIStackView alloc] init];
+                trackingRow.axis = UILayoutConstraintAxisHorizontal;
+                trackingRow.alignment = UIStackViewAlignmentCenter;
+                trackingRow.distribution = UIStackViewDistributionEqualSpacing;
+                [trackingRow addArrangedSubview:HonkLabel(@"NPC tracking markers", UIFontWeightSemibold, 15, UIColor.whiteColor)];
+                [trackingRow addArrangedSubview:tracking];
+                HonkAddRow(gHonkContent, trackingRow);
+                HonkAddRow(gHonkContent, HonkLabel(@"Projects active Body components through Camera.main.WorldToScreenPoint. Labels are generic because managed object names are not resolved.", UIFontWeightRegular, 12, UIColor.lightTextColor));
+            }
             break;
         case 4:
             HonkAddUnavailable(@"Item teleport / spawning", @"scene object identity and ownership are not mapped");
@@ -303,7 +360,27 @@ static void HonkBuildPage(NSInteger page) {
             HonkAddUnavailable(@"Collider visualization", @"render-thread drawing integration is not implemented");
             break;
         case 5:
-            HonkAddUnavailable(@"Cloning / experimental tools", @"Unity object creation and destruction APIs are not integrated");
+            HonkAddRow(gHonkContent, HonkLabel(@"Create at the goose (replaces the previous test primitive)", UIFontWeightRegular, 12, UIColor.lightTextColor));
+            {
+                const char *titles[] = {"Sphere", "Capsule", "Cylinder", "Cube"};
+                const uint32_t commands[] = {
+                    HonkFeatures::kCommandCreateSphere,
+                    HonkFeatures::kCommandCreateCapsule,
+                    HonkFeatures::kCommandCreateCylinder,
+                    HonkFeatures::kCommandCreateCube,
+                };
+                for (NSInteger i = 0; i < 4; ++i) {
+                    HonkAddRow(gHonkContent, HonkButton([NSString stringWithUTF8String:titles[i]],
+                                                        200 + (NSInteger)commands[i],
+                                                        [NSClassFromString(@"HonkMenuOverlay") class],
+                                                        @selector(menuAction:)));
+                }
+                HonkAddRow(gHonkContent, HonkButton(@"Remove test primitive", 210,
+                                                    [NSClassFromString(@"HonkMenuOverlay") class],
+                                                    @selector(menuAction:)));
+            }
+            HonkAddRow(gHonkContent, HonkLabel(@"Creates a Unity primitive with its normal renderer and collider, 1.5 units above the goose. Creating another replaces it. These test objects are not game items.", UIFontWeightRegular, 12, UIColor.lightTextColor));
+            HonkAddUnavailable(@"Cloning NPCs / Goose", @"A stable user-selectable source object and lifetime-safe clone registry are not implemented");
             break;
     }
     [gHonkScroll setContentOffset:CGPointZero animated:NO];
@@ -340,6 +417,8 @@ static void HonkBuildPage(NSInteger page) {
     NSNumber *timeScalePreference = [defaults objectForKey:@"HonkMenu.TimeScale"];
     NSNumber *sizePreference = [defaults objectForKey:@"HonkMenu.SizeFactor"];
     NSNumber *cameraPreference = [defaults objectForKey:@"HonkMenu.CameraFactor"];
+    NSNumber *npcSizePreference = [defaults objectForKey:@"HonkMenu.NpcSizeFactor"];
+    NSNumber *npcTrackingPreference = [defaults objectForKey:@"HonkMenu.NpcTracking"];
     NSNumber *shooPreference = [defaults objectForKey:@"HonkMenu.DisableNpcShoo"];
     HonkFeatures::setJumpEnabled(gHonkState, jumpPreference ? jumpPreference.boolValue : true);
     HonkFeatures::setJumpImpulse(gHonkState, impulsePreference ? impulsePreference.floatValue : HonkReadJumpImpulse());
@@ -349,6 +428,8 @@ static void HonkBuildPage(NSInteger page) {
     HonkFeatures::setTimeScaleEnabled(gHonkState, timeEnabledPreference ? timeEnabledPreference.boolValue : false);
     HonkFeatures::setSizeFactor(gHonkState, sizePreference ? sizePreference.floatValue : 1.0f);
     HonkFeatures::setCameraFactor(gHonkState, cameraPreference ? cameraPreference.floatValue : 1.0f);
+    HonkFeatures::setNpcSizeFactor(gHonkState, npcSizePreference ? npcSizePreference.floatValue : 1.0f);
+    HonkFeatures::setNpcTrackingEnabled(gHonkState, npcTrackingPreference ? npcTrackingPreference.boolValue : false);
     HonkFeatures::setDisableNpcShoo(gHonkState, shooPreference ? shooPreference.boolValue : false);
 
     if (gHonkRoot && gHonkRoot.superview == root) {
@@ -366,6 +447,20 @@ static void HonkBuildPage(NSInteger page) {
         [gHonkRoot.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
         [gHonkRoot.topAnchor constraintEqualToAnchor:root.topAnchor],
         [gHonkRoot.bottomAnchor constraintEqualToAnchor:root.bottomAnchor],
+    ]];
+
+    HonkNpcOverlayView *npcOverlay = [[HonkNpcOverlayView alloc] initWithFrame:CGRectZero];
+    npcOverlay.translatesAutoresizingMaskIntoConstraints = NO;
+    npcOverlay.backgroundColor = UIColor.clearColor;
+    npcOverlay.userInteractionEnabled = NO;
+    npcOverlay.multipleTouchEnabled = YES;
+    gHonkNpcOverlay = npcOverlay;
+    [gHonkRoot addSubview:npcOverlay];
+    [NSLayoutConstraint activateConstraints:@[
+        [npcOverlay.leadingAnchor constraintEqualToAnchor:gHonkRoot.leadingAnchor],
+        [npcOverlay.trailingAnchor constraintEqualToAnchor:gHonkRoot.trailingAnchor],
+        [npcOverlay.topAnchor constraintEqualToAnchor:gHonkRoot.topAnchor],
+        [npcOverlay.bottomAnchor constraintEqualToAnchor:gHonkRoot.bottomAnchor],
     ]];
 
     gHonkLauncher = HonkButton(@"HM", 0, self, @selector(menuAction:));
@@ -481,6 +576,7 @@ static void HonkBuildPage(NSInteger page) {
     HonkResolveGuest();
     UIWindow *window = HonkGameWindow();
     if (window && window.rootViewController.view != gHonkRoot.superview) [self installWhenReady];
+    [gHonkNpcOverlay setNeedsDisplay];
 }
 
 + (void)selectPage:(id)sender {
@@ -512,6 +608,11 @@ static void HonkBuildPage(NSInteger page) {
                 HonkFeatures::setDisableNpcShoo(gHonkState, enabled);
                 [NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"HonkMenu.DisableNpcShoo"];
                 break;
+            case 12:
+                HonkFeatures::setNpcTrackingEnabled(gHonkState, enabled);
+                [NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"HonkMenu.NpcTracking"];
+                [gHonkNpcOverlay setNeedsDisplay];
+                break;
         }
     } else if ([sender isKindOfClass:UISlider.class]) {
         UISlider *slider = (UISlider *)sender;
@@ -535,6 +636,10 @@ static void HonkBuildPage(NSInteger page) {
             HonkFeatures::setCameraFactor(gHonkState, slider.value);
             gHonkCameraValue.text = [NSString stringWithFormat:@"%.0f%%", slider.value * 100.0f];
             [NSUserDefaults.standardUserDefaults setFloat:slider.value forKey:@"HonkMenu.CameraFactor"];
+        } else if (slider.tag == 11) {
+            HonkFeatures::setNpcSizeFactor(gHonkState, slider.value);
+            gHonkNpcSizeValue.text = [NSString stringWithFormat:@"%.0f%%", slider.value * 100.0f];
+            [NSUserDefaults.standardUserDefaults setFloat:slider.value forKey:@"HonkMenu.NpcSizeFactor"];
         }
     }
 }
@@ -549,6 +654,14 @@ static void HonkBuildPage(NSInteger page) {
     if (button.tag == -1) {
         gHonkPanel.hidden = YES;
         [gHonkLauncher setTitle:@"HM" forState:UIControlStateNormal];
+        return;
+    }
+    if (button.tag >= 204 && button.tag <= 207) {
+        (void)HonkFeatures::publishCommand(gHonkState, (uint32_t)(button.tag - 200));
+        return;
+    }
+    if (button.tag == 210) {
+        (void)HonkFeatures::publishCommand(gHonkState, HonkFeatures::kCommandDestroySpawned);
         return;
     }
     HonkResolveGuest();

@@ -32,12 +32,27 @@
 #define HONK_CAMERA_CAPTURED_OFFSET 128
 #define HONK_CAMERA_HELPER_OFFSET 136
 #define HONK_CAMERA_BASE_DISTANCE_OFFSET 144
+#define HONK_SPAWNED_OBJECT_OFFSET 152
+#define HONK_NPC_SIZE_FACTOR_OFFSET 160
+#define HONK_NPC_SCALE_TABLE_OFFSET 168
+#define HONK_NPC_SCALE_ENTRY_SIZE 40
+#define HONK_NPC_SCALE_ENTRY_COUNT 32
+#define HONK_NPC_SCREEN_WIDTH_OFFSET 1448
+#define HONK_NPC_SCREEN_HEIGHT_OFFSET 1452
 
 #ifndef __ASSEMBLER__
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+typedef struct HonkNpcScaleEntry {
+    uintptr_t body;
+    float scaleX, scaleY, scaleZ;
+    uint32_t valid;
+    float screenX, screenY, screenZ;
+    uint32_t visible;
+} HonkNpcScaleEntry;
 
 typedef struct GooseJumpData {
     volatile uint64_t pendingState; // upper word: touch timestamp bits; lower word: event count
@@ -71,6 +86,11 @@ typedef struct GooseJumpData {
     volatile uint32_t cameraCaptured;
     uintptr_t cameraHelper;
     float cameraBaseDistance;
+    uintptr_t spawnedObject;
+    volatile uint32_t npcSizeFactorBits;
+    HonkNpcScaleEntry npcScaleEntries[HONK_NPC_SCALE_ENTRY_COUNT];
+    volatile uint32_t npcScreenWidth;
+    volatile uint32_t npcScreenHeight;
 } GooseJumpData;
 
 static_assert(offsetof(GooseJumpData, pendingState) == GOOSE_JUMP_PENDING_OFFSET);
@@ -104,6 +124,12 @@ static_assert(offsetof(GooseJumpData, cameraFactorBits) == HONK_CAMERA_FACTOR_OF
 static_assert(offsetof(GooseJumpData, cameraCaptured) == HONK_CAMERA_CAPTURED_OFFSET);
 static_assert(offsetof(GooseJumpData, cameraHelper) == HONK_CAMERA_HELPER_OFFSET);
 static_assert(offsetof(GooseJumpData, cameraBaseDistance) == HONK_CAMERA_BASE_DISTANCE_OFFSET);
+static_assert(offsetof(GooseJumpData, spawnedObject) == HONK_SPAWNED_OBJECT_OFFSET);
+static_assert(offsetof(GooseJumpData, npcSizeFactorBits) == HONK_NPC_SIZE_FACTOR_OFFSET);
+static_assert(offsetof(GooseJumpData, npcScaleEntries) == HONK_NPC_SCALE_TABLE_OFFSET);
+static_assert(sizeof(HonkNpcScaleEntry) == HONK_NPC_SCALE_ENTRY_SIZE);
+static_assert(offsetof(GooseJumpData, npcScreenWidth) == HONK_NPC_SCREEN_WIDTH_OFFSET);
+static_assert(offsetof(GooseJumpData, npcScreenHeight) == HONK_NPC_SCREEN_HEIGHT_OFFSET);
 
 namespace GooseJumpInput {
 
@@ -176,8 +202,14 @@ static constexpr uint32_t kCommandNone = 0;
 static constexpr uint32_t kCommandSavePosition = 1;
 static constexpr uint32_t kCommandRestorePosition = 2;
 static constexpr uint32_t kCommandTeleport = 3;
+static constexpr uint32_t kCommandCreateSphere = 4;
+static constexpr uint32_t kCommandCreateCapsule = 5;
+static constexpr uint32_t kCommandCreateCylinder = 6;
+static constexpr uint32_t kCommandCreateCube = 7;
+static constexpr uint32_t kCommandDestroySpawned = 8;
 static constexpr uint32_t kFloatEnabled = 1u << 1;
 static constexpr uint32_t kDisableNpcShoo = 1u << 2;
+static constexpr uint32_t kNpcTracking = 1u << 3;
 static constexpr float kMinimumSpeedFactor = 0.5f;
 static constexpr float kMaximumSpeedFactor = 3.0f;
 static constexpr float kMinimumJumpImpulse = 0.5f;
@@ -189,6 +221,8 @@ static constexpr float kMinimumSizeFactor = 0.5f;
 static constexpr float kMaximumSizeFactor = 2.0f;
 static constexpr float kMinimumCameraFactor = 0.5f;
 static constexpr float kMaximumCameraFactor = 2.0f;
+static constexpr float kMinimumNpcSizeFactor = 0.5f;
+static constexpr float kMaximumNpcSizeFactor = 2.0f;
 
 inline bool finiteAndInRange(float value, float absoluteLimit) {
     return isfinite(value) && value >= -absoluteLimit && value <= absoluteLimit;
@@ -224,7 +258,7 @@ inline bool publishTeleport(GooseJumpData *state, float x, float y, float z) {
 }
 
 inline bool publishCommand(GooseJumpData *state, uint32_t command) {
-    if (!state || command < kCommandSavePosition || command > kCommandTeleport) return false;
+    if (!state || command < kCommandSavePosition || command > kCommandDestroySpawned) return false;
     __atomic_store_n(&state->command, command, __ATOMIC_RELEASE);
     return true;
 }
@@ -255,6 +289,20 @@ inline void setDisableNpcShoo(GooseJumpData *state, bool disabled) {
     uint32_t desired;
     do {
         desired = disabled ? (observed | kDisableNpcShoo) : (observed & ~kDisableNpcShoo);
+    } while (!__atomic_compare_exchange_n(&state->featureFlags, &observed, desired,
+                                           true, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
+}
+
+inline bool npcTrackingEnabled(const GooseJumpData *state) {
+    return state && (__atomic_load_n(&state->featureFlags, __ATOMIC_ACQUIRE) & kNpcTracking) != 0;
+}
+
+inline void setNpcTrackingEnabled(GooseJumpData *state, bool enabled) {
+    if (!state) return;
+    uint32_t observed = __atomic_load_n(&state->featureFlags, __ATOMIC_ACQUIRE);
+    uint32_t desired;
+    do {
+        desired = enabled ? (observed | kNpcTracking) : (observed & ~kNpcTracking);
     } while (!__atomic_compare_exchange_n(&state->featureFlags, &observed, desired,
                                            true, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
 }
@@ -300,6 +348,18 @@ inline void setCameraFactor(GooseJumpData *state, float value) {
     if (!state) return;
     const float bounded = boundedFactor(value, kMinimumCameraFactor, kMaximumCameraFactor, 1.0f);
     __atomic_store_n(&state->cameraFactorBits, GooseJumpInput::floatBits(bounded), __ATOMIC_RELEASE);
+}
+
+inline float npcSizeFactor(const GooseJumpData *state) {
+    if (!state) return 1.0f;
+    return boundedFactor(GooseJumpInput::bitsFloat(__atomic_load_n(&state->npcSizeFactorBits, __ATOMIC_ACQUIRE)),
+                         kMinimumNpcSizeFactor, kMaximumNpcSizeFactor, 1.0f);
+}
+
+inline void setNpcSizeFactor(GooseJumpData *state, float value) {
+    if (!state) return;
+    const float bounded = boundedFactor(value, kMinimumNpcSizeFactor, kMaximumNpcSizeFactor, 1.0f);
+    __atomic_store_n(&state->npcSizeFactorBits, GooseJumpInput::floatBits(bounded), __ATOMIC_RELEASE);
 }
 
 } // namespace HonkFeatures

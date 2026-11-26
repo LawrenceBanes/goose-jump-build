@@ -41,10 +41,18 @@ goose_reloc_data_add:
     stlr    wzr, [x10]
     add     x10, x22, #HONK_SAVED_VALID_OFFSET
     stlr    wzr, [x10]
+    str     xzr, [x22, #HONK_SPAWNED_OBJECT_OFFSET]
     str     wzr, [x22, #HONK_SCALE_CAPTURED_OFFSET]
     str     xzr, [x22, #HONK_SCALE_GOOSE_OFFSET]
     str     wzr, [x22, #HONK_CAMERA_CAPTURED_OFFSET]
     str     xzr, [x22, #HONK_CAMERA_HELPER_OFFSET]
+    add     x9, x22, #HONK_NPC_SCALE_TABLE_OFFSET
+    mov     w10, #HONK_NPC_SCALE_ENTRY_COUNT
+.Lreset_npc_scale_entries:
+    stlr    xzr, [x9]
+    add     x9, x9, #HONK_NPC_SCALE_ENTRY_SIZE
+    subs    w10, w10, #1
+    b.ne    .Lreset_npc_scale_entries
     str     x19, [x22, #GOOSE_JUMP_LAST_MOVER_OFFSET]
 .Lsame_mover:
     // Apply the UI speed multiplier to the horizontal velocity computed by
@@ -125,6 +133,12 @@ goose_reloc_command_time_scale:
     b.eq    .Lrestore_position
     cmp     w9, #3
     b.eq    .Lteleport_position
+    cmp     w9, #4
+    b.lo    .Lafter_command
+    cmp     w9, #7
+    b.ls    .Lspawn_primitive
+    cmp     w9, #8
+    b.eq    .Ldestroy_spawned
     b       .Lafter_command
 
 .Lsave_position:
@@ -245,6 +259,67 @@ goose_reloc_move_position:
     mov     x1, xzr
 goose_reloc_teleport_clear_velocity:
     .inst   0x94000000              // BL Rigidbody.set_velocity
+
+.Lspawn_primitive:
+    // One user-owned experimental primitive at a time. Unity performs the
+    // component setup and destruction on this physics/game thread.
+    ldr     x0, [x22, #HONK_SPAWNED_OBJECT_OFFSET]
+    cbz     x0, .Lspawn_create
+    mov     x1, xzr
+goose_reloc_destroy_spawned_before_create:
+    .inst   0x94000000              // BL UnityEngine.Object.Destroy(Object)
+    str     xzr, [x22, #HONK_SPAWNED_OBJECT_OFFSET]
+.Lspawn_create:
+    sub     w0, w9, #4              // PrimitiveType Sphere=0 .. Cube=3
+    mov     x1, xzr
+goose_reloc_create_primitive:
+    .inst   0x94000000              // BL GameObject.CreatePrimitive(PrimitiveType)
+    cbz     x0, .Lafter_command
+    str     x0, [x22, #HONK_SPAWNED_OBJECT_OFFSET]
+    str     x0, [sp, #16]
+    ldr     x0, [x19, #0x18]         // Mover.rb
+    cbz     x0, .Lafter_command
+    mov     x1, xzr
+goose_reloc_spawn_goose_position:
+    .inst   0x94000000              // BL Rigidbody.get_position
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    fmov    w10, s1
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    fmov    w10, s2
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lafter_command
+    fmov    s3, #1.5
+    fadd    s1, s1, s3
+    str     s0, [sp, #0]
+    str     s1, [sp, #4]
+    str     s2, [sp, #8]
+    ldr     x0, [sp, #16]
+    mov     x1, xzr
+goose_reloc_spawn_get_transform:
+    .inst   0x94000000              // BL GameObject.get_transform
+    cbz     x0, .Lafter_command
+    mov     x1, xzr
+    ldr     s0, [sp, #0]
+    ldr     s1, [sp, #4]
+    ldr     s2, [sp, #8]
+goose_reloc_spawn_set_position:
+    .inst   0x94000000              // BL Transform.set_position
+    b       .Lafter_command
+
+.Ldestroy_spawned:
+    ldr     x0, [x22, #HONK_SPAWNED_OBJECT_OFFSET]
+    cbz     x0, .Lafter_command
+    mov     x1, xzr
+goose_reloc_destroy_spawned:
+    .inst   0x94000000              // BL UnityEngine.Object.Destroy(Object)
+    str     xzr, [x22, #HONK_SPAWNED_OBJECT_OFFSET]
+    b       .Lafter_command
 
 .Lafter_command:
     // Optional global game-rate override. Never change Time from UIKit. Do not
@@ -728,6 +803,229 @@ goose_shoo_reloc_data_add:
     movk    w11, #0x47c3, lsl #16   // float 100000.0
     str     w11, [x0, #0x90]
 .Lshoo_resume:
+    // Capture and scale each live Body from this verified per-NPC update hook.
+    // The fixed table avoids managed enumeration and is reset when the Goose
+    // Mover changes (scene/player replacement).
+    sub     sp, sp, #80
+    str     x20, [sp, #32]
+    str     x22, [sp, #40]
+    str     x0, [sp, #24]
+    str     x30, [sp, #72]
+    str     wzr, [sp, #4]
+    mov     x22, x9
+    ldr     w10, [x22, #HONK_NPC_SIZE_FACTOR_OFFSET]
+    fmov    s4, w10
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lnpc_scale_finish
+    fmov    s3, #0.5
+    fcmp    s4, s3
+    b.lt    .Lnpc_scale_finish
+    fmov    s3, #2.0
+    fcmp    s4, s3
+    b.gt    .Lnpc_scale_finish
+    str     w10, [sp, #0]
+    ldr     x11, [sp, #24]
+    add     x9, x22, #HONK_NPC_SCALE_TABLE_OFFSET
+    mov     w12, #HONK_NPC_SCALE_ENTRY_COUNT
+.Lnpc_scale_find:
+    ldar    x13, [x9]
+    cmp     x13, x11
+    b.eq    .Lnpc_scale_found
+    cbz     x13, .Lnpc_scale_capture
+    add     x9, x9, #HONK_NPC_SCALE_ENTRY_SIZE
+    subs    w12, w12, #1
+    b.ne    .Lnpc_scale_find
+    b       .Lnpc_scale_finish
+.Lnpc_scale_capture:
+    stlr    x11, [x9]
+    str     x9, [sp, #8]
+    mov     x0, x11
+    mov     x1, xzr
+goose_reloc_npc_component_transform:
+    .inst   0x94000000              // BL Component.get_transform
+    cbz     x0, .Lnpc_scale_finish
+    str     x0, [sp, #16]
+    mov     x1, xzr
+goose_reloc_npc_transform_get_scale:
+    .inst   0x94000000              // BL Transform.get_localScale
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lnpc_scale_finish
+    fmov    w10, s1
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lnpc_scale_finish
+    fmov    w10, s2
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lnpc_scale_finish
+    ldr     x9, [sp, #8]
+    str     s0, [x9, #8]
+    str     s1, [x9, #12]
+    str     s2, [x9, #16]
+    mov     w10, #1
+    str     w10, [x9, #20]
+    str     w10, [sp, #4]
+    b       .Lnpc_scale_apply
+.Lnpc_scale_found:
+    str     x9, [sp, #8]
+    ldr     w10, [x9, #20]
+    cbz     w10, .Lnpc_scale_finish
+    mov     w10, #1
+    str     w10, [sp, #4]
+.Lnpc_scale_apply:
+    ldr     s4, [sp, #0]
+    fmov    w10, s4
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lnpc_scale_finish
+    ldr     x0, [sp, #24]
+    mov     x1, xzr
+goose_reloc_npc_apply_transform:
+    .inst   0x94000000              // BL Component.get_transform
+    cbz     x0, .Lnpc_scale_finish
+    str     x0, [sp, #16]
+    ldr     x9, [sp, #8]
+    ldr     s0, [x9, #8]
+    ldr     s1, [x9, #12]
+    ldr     s2, [x9, #16]
+    fmul    s0, s0, s4
+    fmul    s1, s1, s4
+    fmul    s2, s2, s4
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lnpc_scale_finish
+    fmov    w10, s1
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lnpc_scale_finish
+    fmov    w10, s2
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lnpc_scale_finish
+    ldr     x0, [sp, #16]
+    mov     x1, xzr
+goose_reloc_npc_transform_set_scale:
+    .inst   0x94000000              // BL Transform.set_localScale
+.Lnpc_scale_finish:
+    ldr     w10, [sp, #4]
+    cbz     w10, .Lnpc_scale_restore_regs
+    ldr     x9, [sp, #8]
+    add     x10, x22, #HONK_FLAGS_OFFSET
+    ldar    w10, [x10]
+    tbnz    w10, #3, .Lnpc_esp_project
+    str     wzr, [x9, #36]
+    b       .Lnpc_scale_restore_regs
+.Lnpc_esp_project:
+    ldr     x0, [sp, #24]
+    mov     x1, xzr
+goose_reloc_npc_esp_transform:
+    .inst   0x94000000              // BL Component.get_transform
+    cbz     x0, .Lnpc_esp_hide
+    mov     x1, xzr
+goose_reloc_npc_esp_world_position:
+    .inst   0x94000000              // BL Transform.get_position
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lnpc_esp_hide
+    fmov    w10, s1
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lnpc_esp_hide
+    fmov    w10, s2
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lnpc_esp_hide
+    fmov    s3, #1.5
+    fadd    s1, s1, s3
+    str     s0, [sp, #48]
+    str     s1, [sp, #52]
+    str     s2, [sp, #56]
+    mov     x0, xzr
+goose_reloc_npc_camera_main:
+    .inst   0x94000000              // BL Camera.get_main
+    cbz     x0, .Lnpc_esp_hide
+    mov     x1, xzr
+    ldr     s0, [sp, #48]
+    ldr     s1, [sp, #52]
+    ldr     s2, [sp, #56]
+goose_reloc_npc_world_to_screen:
+    .inst   0x94000000              // BL Camera.WorldToScreenPoint(Vector3)
+    str     s0, [sp, #48]
+    str     s1, [sp, #52]
+    str     s2, [sp, #56]
+    mov     x0, xzr
+    mov     x1, xzr
+goose_reloc_npc_screen_width:
+    .inst   0x94000000              // BL Screen.get_width
+    cmp     w0, #0
+    b.le    .Lnpc_esp_hide
+    str     w0, [sp, #60]
+    str     w0, [x22, #HONK_NPC_SCREEN_WIDTH_OFFSET]
+    mov     x0, xzr
+    mov     x1, xzr
+goose_reloc_npc_screen_height:
+    .inst   0x94000000              // BL Screen.get_height
+    cmp     w0, #0
+    b.le    .Lnpc_esp_hide
+    str     w0, [sp, #64]
+    str     w0, [x22, #HONK_NPC_SCREEN_HEIGHT_OFFSET]
+    ldr     s0, [sp, #48]
+    ldr     s1, [sp, #52]
+    ldr     s2, [sp, #56]
+    fmov    w10, s0
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lnpc_esp_hide
+    fmov    w10, s1
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lnpc_esp_hide
+    fmov    w10, s2
+    ubfx    w11, w10, #23, #8
+    cmp     w11, #255
+    b.eq    .Lnpc_esp_hide
+    fcmp    s2, #0.0
+    b.le    .Lnpc_esp_hide
+    fmov    s3, wzr
+    fcmp    s0, s3
+    b.lt    .Lnpc_esp_hide
+    ldr     w10, [sp, #60]
+    scvtf   s3, w10
+    fcmp    s0, s3
+    b.gt    .Lnpc_esp_hide
+    fcmp    s1, s3
+    b.lt    .Lnpc_esp_hide
+    ldr     w10, [sp, #64]
+    scvtf   s3, w10
+    fcmp    s1, s3
+    b.gt    .Lnpc_esp_hide
+    ldr     x9, [sp, #8]
+    add     x14, x9, #24
+    fmov    w10, s0
+    stlr    w10, [x14]
+    add     x14, x9, #28
+    fmov    w10, s1
+    stlr    w10, [x14]
+    str     s2, [x9, #32]
+    mov     w10, #1
+    add     x14, x9, #36
+    stlr    w10, [x14]
+    b       .Lnpc_scale_restore_regs
+.Lnpc_esp_hide:
+    ldr     x9, [sp, #8]
+    add     x14, x9, #36
+    stlr    wzr, [x14]
+.Lnpc_scale_restore_regs:
+    ldr     x0, [sp, #24]
+    ldr     x20, [sp, #32]
+    ldr     x22, [sp, #40]
+    ldr     x30, [sp, #72]
+    add     sp, sp, #80
 goose_reloc_shoo_displaced:
     .inst   0xA9BE4FF4              // displaced STP x20,x19,[sp,#-0x20]!
 goose_reloc_shoo_continue:

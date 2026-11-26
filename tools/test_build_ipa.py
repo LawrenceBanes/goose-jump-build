@@ -115,10 +115,20 @@ class PatcherTests(unittest.TestCase):
             build.BASE + 0x1DBA100,  # Component.get_transform
             build.BASE + 0x1DEB834,  # Transform.get_localScale
             build.BASE + 0x1DEB8E0,  # Transform.set_localScale
+            build.BASE + 0x1DC3204,  # GameObject.CreatePrimitive
+            build.BASE + 0x1DC3638,  # GameObject.get_transform
+            build.BASE + 0x1DEAE6C,  # Transform.set_position
+            build.BASE + 0x1DD344C,  # UnityEngine.Object.Destroy
+            build.BASE + 0x1DEADC0,  # Transform.get_position
+            build.BASE + 0x1DB8128,  # Camera.get_main
+            build.BASE + 0x1DB7A64,  # Camera.WorldToScreenPoint(Vector3)
+            build.BASE + 0x1DE2A24,  # Screen.get_width
+            build.BASE + 0x1DE2A84,  # Screen.get_height
         }
         self.assertTrue(required.issubset(starts))
         self.assertIn(build.CAMERA_LATEUPDATE_VA, starts)
         self.assertIn(build.SHOO_HOOK_VA, starts)
+        self.assertIn(build.BASE + 0x10C8D88, starts)  # Body.Update registry hook
         self.assertLessEqual(len(self.helper), build.CODE_END_VA - build.HELPER_VA)
 
     def test_package_never_targets_original_or_extracted_inputs(self):
@@ -136,8 +146,9 @@ class PatcherTests(unittest.TestCase):
                          build.encode_bl(build.HOOK_VA, build.HELPER_VA))
         self.assertEqual(struct.unpack_from("<I", patched, build.SHOO_HOOK_FILEOFF)[0],
                          build.encode_b(build.SHOO_HOOK_VA, build.SHOO_GUARD_VA))
-        self.assertEqual(struct.unpack_from("<I", self.helper, 0x1000 + 64)[0],
-                         build.encode_b(build.SHOO_GUARD_VA + 64, build.SHOO_HOOK_VA + 4))
+        # The guard now contains the NPC scale service before the preserved
+        # Body.Update prologue; patch_helper validates its symbolic branch.
+        self.assertIn("goose_reloc_shoo_continue", (ROOT / "src/jump_helper.S").read_text())
         self.assertEqual(self.original[build.HOOK_FILEOFF:build.HOOK_FILEOFF + 4],
                          struct.pack("<I", build.HOOK_ORIGINAL))
         self.assertEqual(self.original[build.SHOO_HOOK_FILEOFF:build.SHOO_HOOK_FILEOFF + 4],

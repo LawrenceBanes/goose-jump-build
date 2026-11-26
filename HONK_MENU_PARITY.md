@@ -11,28 +11,35 @@
 
 | Upstream feature | Actual behavior observed in source | Classification for iOS | Honk-Menu iOS v0.2.0 status |
 |---|---|---|---|
-| Main menu, categories, shortcuts, credits | Unity IMGUI windows and keyboard shortcut handling | Directly adaptable UI; implementation must be native UIKit | Native touch menu shell; Movement, Teleport, Camera, Goose/NPC, World and Experimental pages. Shows explicit unavailability for incomplete groups. |
-| Jump and jump strength | Toggles jump input and uses the Goose Rigidbody path | Requires native IL2CPP movement hook | Implemented by the jump hook; retained with enable switch and impulse slider. |
-| Goose speed | Repeatedly changes `Mover.currentSpeed` while a keyboard toggle is active | Requires native movement hook | Implemented as bounded horizontal velocity scaling at the verified Mover physics hook. |
-| Save/load goose position | Saves the goose Transform position and sets it back later | Requires native Rigidbody/Transform calls on the game thread | Implemented with verified `Rigidbody.get_position` and `Rigidbody.MovePosition` method pointers; runtime remains device-unverified. |
-| Area teleport destinations | Calls `GameObject.Find("Goose").transform.position = ...` using eight coordinates | Requires native movement hook; exact game thread and coordinate validity matter | Eight area destinations are sent as bounded requests and applied through Rigidbody.MovePosition. |
-| Speedrun clip destinations | Directly assigns goose Transform position for six named practice locations | Requires native movement hook | Six clip destinations are implemented through the same validated teleport dispatcher. |
-| Fun/out-of-bounds destinations | Directly assigns Transform positions, several above/outside the map | Requires native movement hook and carries recovery risk | Nine destinations are available in the scrollable Teleport page with an explicit warning. |
-| Noclip / floating | Toggles noclip, disables Goose colliders, and changes movement based on keyboard/controller input | Requires verified collider enumeration, original-state capture/restore and a game-thread movement path | True noclip remains unavailable: this exact build has no verified reversible Collider setter. A separate Float/Hold Height toggle is implemented; it zeroes only Goose vertical velocity on the physics hook, preserves horizontal velocity and collision, and yields while swimming or dragging. |
-| Goose color / P2 skin / player icon | Mutates Goose materials, mesh state and a named scene GameObject/SpriteRenderer | Requires IL2CPP renderer/object mapping and resource lifecycle handling | Goose resize is implemented through verified Transform localScale access with a captured baseline and 0.5×–2× bounded slider. Goose color, P2 skin and player icon remain unavailable. |
-| Disable shoo | Finds named NPC Brain objects and writes `timeAllowedToShooAgain` | Requires a verified per-NPC update hook and field layout | Implemented through a second verified `Body.Update` entry hook. It writes the known `Body.shooReadiness.timeAllowedToShooAgain` field at `Body + 0x90` to 100000 while enabled, then clears only that sentinel when disabled. Runtime behavior still needs an iPhone test. |
-| NPC tracking / ESP | Finds named NPC objects and projects world positions with `Camera.main`/IMGUI | Requires native object lookup, camera calls and render-thread overlay | Not implemented; requires verified object and camera access. |
-| NPC/Goose resize and player swap | Finds named objects and changes local scale or position | Requires game-object access plus original transform capture | Not implemented. |
-| Speedrun item rescue (bell, boot, child) | Finds named scene objects and moves them to the goose | Requires verified Unity string/object lookup and target identity | Not implemented; the current game-object access service is deliberately limited to the Goose already supplied by `Mover.FixedUpdate`. |
-| Item spawner | Finds named GameObjects and moves an item, or creates primitives in the experimental version | Requires Unity object construction, name/string calls and lifetime management | Not implemented. |
-| Task completion | Writes a list of task IDs through game task APIs; README warns about achievement effects | Requires verified progression state and save/achievement semantics | Not implemented; excluded to avoid damaging progress or achievement state. |
-| Clone/destroy people or Goose | Creates/copies Unity GameObjects and destroys objects | Requires allocation, component cloning and ownership-safe teardown | Not implemented. |
-| Wireframe / collider visualization | Changes renderer mode or draws collider boundaries through Unity GUI | Requires graphics/render-thread integration beyond the movement hook | Not implemented. |
-| Free camera / first-person camera / goose-to-camera | Creates a Unity camera, adds mouse-look components, hides Goose meshes and handles desktop cursor/input | Mouse, keyboard, cursor locking and managed component creation are unsupported on this iOS path | Not implemented. A UIKit camera control still needs a verified camera rig and render-phase lifecycle hook. The existing follow camera distance can be adjusted separately. |
-| Follow camera distance | Uses the Goose camera helper's follow distance | Requires verified camera helper access | Implemented as a bounded 0.5×–2× slider using `Goose.gooseCameraHelper` and `GooseCameraHelper.distance`, with per-helper baseline capture. The slider is under Move → Camera. |
-| Game speed / slow motion | Changes Unity time scale from desktop keyboard controls | Requires game-thread Time API call and coordinated input/physics behavior | Implemented as an opt-in 0.5×–2× Time.timeScale slider, applied only from the physics thread; it skips paused state and resets to 1× when disabled. This is a global game-rate change. |
-| Random bell minigame | Moves the golden bell to a randomized world position and draws a marker | Requires object lookup, random placement and HUD rendering | Not implemented. |
-| Multiplayer Goose-to-Goose actions | Moves Goose/GooseB or bell between players | Depends on the multiplayer scene and two-player objects | Not implemented; current target build is single-player and no second Goose pointer is verified. |
+| Native menu, categories, shortcut help, credits | IMGUI windows; menu opens after honking; keyboard/gamepad handlers | UIKit adaptation | Native touch shell with Move, Teleport, Camera, Goose/NPC, World, and Experimental pages. Native credits/source attribution UI is not yet ported. |
+| Jump toggle / strength | Input-triggered Rigidbody jump | Movement hook | Implemented in the pinned Mover hook with touchscreen input, strength setting, and repeated airborne taps. |
+| Horizontal speed | Changes `Mover.currentSpeed` under a keyboard toggle | Movement hook | Implemented as a bounded X/Z velocity scale; original movement computes the direction each tick. |
+| Floating | Repeatedly applies upward force while enabled | Rigidbody physics | Implemented as a vertical velocity lock; X/Z movement and collision remain active. It is not noclip. |
+| Noclip | Disables goose colliders and uses free movement | Requires verified Goose/world collider pairing and restoration | Not implemented. `UnityEngine.Collider` in this build exposes `get_enabled` only. Safe `Physics.IgnoreCollision` would require complete live collider enumeration; native generic enumeration/type descriptors are not yet wired. Do not substitute Float or kinematic mode. |
+| Goose resize | Changes Goose `Transform.localScale` incrementally | Transform access and baseline lifecycle | Implemented with a captured per-Goose baseline and 0.5×–2× slider. |
+| Goose color randomization | Changes material colors on the Goose | Renderer/material access and original material-state capture | Not implemented; renderer and material arrays are not yet safely resolved. |
+| Goose 2 skin / player icon | Enables named GooseB visual and a named co-op icon object | Requires object lookup, renderer and SpriteRenderer access | Not implemented; this target app is single-player and the relevant scene objects are not resolved. |
+| Save/load goose position | Saves Transform position and later restores it | Rigidbody/Transform calls on game thread | Implemented using `Rigidbody.get_position` and `MovePosition`; bounded coordinates and momentum reset. |
+| Area teleport list | Eight scene-area coordinates | Physics-thread position command | Implemented through the shared checked teleport dispatcher. |
+| Speedrun clip list | Six clip/practice coordinates | Physics-thread position command | Implemented through the shared checked teleport dispatcher. |
+| Experimental/out-of-bounds teleports | Nine coordinates, including elevated/outside-map positions | Physics-thread position command with recovery warning | Implemented; menu warns that recovery may require restarting the game. |
+| Teleport to bell / boot / child; spawn bell / boot / Timmy | `GameObject.Find(name)` and position changes | Managed string creation, object lookup, ownership and scene lifecycle | Not implemented. Exact `GameObject.Find(string)` exists at RVA `0x1dc3a6c`, but no safe managed-string creation/lookup service is integrated. |
+| Item relocation and named object spawner | Finds named objects; test spawner can instantiate game objects | Object identity, strings, prefab setup and lifetime | Named game items are not implemented. |
+| Experimental primitive creation/destruction | Creates/destroys Unity primitives; upstream buttons select cube/sphere/capsule/cylinder | Direct Unity API calls on game thread | Implemented in the active source: creates one primitive 1.5 units above the Goose and replaces/destroys the previous test primitive. Uses pinned `CreatePrimitive`, `get_transform`, `set_position`, and `Destroy` methods. Device behavior is unverified. |
+| Disable NPC shoo | Writes `Body.shooReadiness.timeAllowedToShooAgain` | `Body.Update` hook and field mapping | Implemented through the verified Body.Update hook at body offset `+0x90`; clearing only its sentinel restores normal cooldown progression. |
+| NPC resize | Upstream selects named people and adjusts local scale | Per-NPC `Body.Update`, Transform and baseline tracking | Implemented in active source as a bounded all-active-people size slider, using a 32-entry baseline table reset when the Goose Mover changes. Device/transition behavior is unverified. |
+| NPC location tracking / ESP | Projects active NPC positions with `Camera.main` and draws red markers | Body hook, camera projection and UIKit render overlay | Implemented in active source: Body.Update position → verified `Camera.WorldToScreenPoint` → pass-through UIKit overlay. Generic labels are used because names are unresolved. Device orientation/coordinate fit is unverified. |
+| Disable/remove NPC AI | Not a separate current upstream menu action; the source primarily suppresses shoo | Brain/NavMeshAgent access and restoration if added | Not a current upstream feature. No AI disable control is exposed. |
+| Clone/destroy NPCs and Goose | Instantiates selected GameObjects; removes tracked clones | Safe source selection, component cloning, reference lifetime and cleanup | Not implemented. A button is withheld until source selection and stale-object handling are safe. |
+| Task completion | Triggers named switch events/task IDs; upstream warns of achievement side effects | Managed strings, progression semantics, save/achievement behavior | Not implemented. `SwitchEventManager.TriggerEvent(string)` is mapped, but task IDs and persistent progression effects are not verified. |
+| Collider visualization / debug details | Draws collider lines, object information and screen-space output | Collider geometry and a render overlay | NPC marker overlay exists; general collider visualization and native debug inspector remain unimplemented. |
+| Wireframe / create-destroy primitives | Changes rendering mode and creates/removes primitives | Renderer-state capture/restore; Unity object creation | Primitive create/remove is implemented. Wireframe is not. |
+| First-person Goose camera | Parents a new camera to Goose head and hides Goose render meshes | Camera/render lifecycle, component access and renderer restoration | Not implemented. |
+| Magic/free camera, controls, freeze/reset, position info, teleport Goose to camera, follow distance | Creates another camera, moves it by keyboard/mouse, toggles active camera, reports pose | Camera object discovery/creation, frame-phase hook and touch controls | Follow-distance multiplier is implemented using GooseCameraHelper. Free camera and camera teleport remain unimplemented; camera position display is not yet exposed. |
+| Random Bell minigame / marker | Randomizes goldenBell position and shows a marker | Named object lookup, bounded placement and UIKit marker | Not implemented because the bell pointer/name lookup is unresolved. |
+| Game speed / slow motion | Changes Unity `Time.timeScale` | Physics-thread Unity Time calls and lifecycle restoration | Implemented as an opt-in bounded 0.5×–2× global rate slider; skips paused time and returns to 1× when disabled during gameplay. |
+| Multiplayer Goose-to-Goose actions | Historic GooseNest/multiplayer behavior references GooseB and bell | Requires the single-player build to contain player-two objects | Unsupported by the exact target game build; no multiplayer mode or second Goose pointer is present. |
+| Deliberately removed upstream functions | Changelog says third-person was removed for janky movement, “bring all GameObjects to Goose” was removed as game-breaking, and AdvanceOutput was removed | Do not reintroduce by default | Not reintroduced. |
 
 ## Current native architecture
 
@@ -42,6 +49,26 @@
 - Position reads and teleports use verified methods from the IL2CPP 24.1 method map: `Rigidbody.get_position` RVA `0x1e16108`, `Rigidbody.MovePosition` RVA `0x1e16454`, and `Rigidbody.set_velocity` RVA `0x1e158fc`. Addresses are patched as same-image relative branches and inherit ASLR slide with the game image.
 - Shared data remains in the already-pinned zero-fill state page. It now contains jump, speed, and teleport request state. A command is consumed on the physics thread, validates finite map-bounded coordinates, and clears momentum after an arrival. Scene/player replacement clears pending teleport/save state.
 - The menu's full-screen container returns `nil` from UIKit hit testing outside its launcher or visible panel. Multitouch stays enabled, and the separate Jump button remains in place.
+
+## Mission 07 verified API evidence
+
+The following additions are mapped against the exact pinned executable's `LC_FUNCTION_STARTS` and IL2CPP dump; each listed VA is a function entry, not an inferred call-site interior. Base VA is `0x100000000`.
+
+| API / hook | RVA | Use in the active source |
+|---|---:|---|
+| `GameObject.CreatePrimitive(PrimitiveType)` | `0x1dc3204` | Create one selected test primitive |
+| `Rigidbody.get_position` | `0x1e16108` | Anchor primitive at goose position |
+| `GameObject.get_transform` | `0x1dc3638` | Position the primitive |
+| `Transform.set_position` | `0x1deae6c` | Position the primitive |
+| `UnityEngine.Object.Destroy` | `0x1dd344c` | Replace/remove the previous test primitive |
+| `Component.get_transform` | `0x1dba100` | Capture/apply active Body scale and position |
+| `Transform.get_localScale` / `set_localScale` | `0x1deb834` / `0x1deb8e0` | NPC baseline scaling |
+| `Transform.get_position` | `0x1deadc0` | NPC screen-marker input |
+| `Camera.get_main` / `WorldToScreenPoint(Vector3)` | `0x1db8128` / `0x1db7a64` | NPC screen projection |
+| `Screen.get_width` / `get_height` | `0x1de2a24` / `0x1de2a84` | Convert projection to overlay dimensions |
+| `Body.Update` hook | `0x10c8d88` | Existing shoo guard plus bounded live Body tracking |
+
+The helper calls these entries only from the game-thread `Body.Update` or movement hook. UI reads projected coordinates through atomic acquire loads; game code publishes object identity, coordinates and visibility with release stores. The 32-slot registry is bounded and reset when the observed Goose `Mover` changes. This avoids managed enumeration but means NPC markers are generic and only active `Body.Update` objects are represented. Runtime object lifetime, orientation scaling, and visual correctness still need device testing.
 
 ## Additional native features in v0.2 source
 

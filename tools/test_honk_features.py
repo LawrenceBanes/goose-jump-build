@@ -28,17 +28,22 @@ class HonkMenuPortTests(unittest.TestCase):
         for title in ("Move", "Teleport", "Camera", "Goose/NPC", "World", "Experimental"):
             self.assertIn(f'@"{title}"', MENU)
         for control in ("Save goose position", "Restore saved position", "Horizontal speed",
-                        "Jump impulse", "Starting area", "Geesus clip"):
+                        "Jump impulse", "Starting area", "Geesus clip",
+                        "Create at the goose", "Remove test primitive", "Sphere", "Cube",
+                        "NPC tracking markers"):
             self.assertIn(control, MENU)
         self.assertIn("Unavailable in this build", MENU)
         self.assertIn("Collision stays enabled; this is not noclip", MENU)
-        self.assertIn("this build exposes no verified reversible Collider setter", MENU)
+        self.assertIn("Scene collider pairs are not yet enumerated safely", MENU)
+        self.assertIn("NPC size (active people)", MENU)
         for supported in ("Float / hold height", "Custom game speed", "Goose size",
+                          "NPC size (active people)", "NPC tracking markers",
                           "Follow camera distance", "Disable NPC shoo"):
             self.assertIn(supported, MENU)
         for key in ("HonkMenu.FloatEnabled", "HonkMenu.TimeScaleEnabled",
                     "HonkMenu.TimeScale", "HonkMenu.SizeFactor", "HonkMenu.CameraFactor",
-                    "HonkMenu.DisableNpcShoo"):
+                    "HonkMenu.DisableNpcShoo", "HonkMenu.NpcSizeFactor",
+                    "HonkMenu.NpcTracking"):
             self.assertIn(key, MENU)
 
     def test_ui_dispatches_commands_without_calling_unity(self):
@@ -62,6 +67,21 @@ class HonkMenuPortTests(unittest.TestCase):
             "goose_reloc_hover_get_velocity": 0x101E15850,
             "goose_reloc_hover_set_velocity": 0x101E158FC,
             "goose_reloc_component_transform": 0x101DBA100,
+            "goose_reloc_create_primitive": 0x101DC3204,
+            "goose_reloc_spawn_goose_position": 0x101E16108,
+            "goose_reloc_spawn_get_transform": 0x101DC3638,
+            "goose_reloc_spawn_set_position": 0x101DEAE6C,
+            "goose_reloc_destroy_spawned": 0x101DD344C,
+            "goose_reloc_npc_component_transform": 0x101DBA100,
+            "goose_reloc_npc_transform_get_scale": 0x101DEB834,
+            "goose_reloc_npc_apply_transform": 0x101DBA100,
+            "goose_reloc_npc_transform_set_scale": 0x101DEB8E0,
+            "goose_reloc_npc_esp_transform": 0x101DBA100,
+            "goose_reloc_npc_esp_world_position": 0x101DEADC0,
+            "goose_reloc_npc_camera_main": 0x101DB8128,
+            "goose_reloc_npc_world_to_screen": 0x101DB7A64,
+            "goose_reloc_npc_screen_width": 0x101DE2A24,
+            "goose_reloc_npc_screen_height": 0x101DE2A84,
             "goose_reloc_transform_get_scale": 0x101DEB834,
             "goose_reloc_transform_set_scale": 0x101DEB8E0,
             "goose_reloc_rate_get_time_scale": 0x101DE9FE0,
@@ -84,11 +104,13 @@ class HonkMenuPortTests(unittest.TestCase):
 
     def test_float_size_and_time_controls_are_game_thread_operations(self):
         for offset in ("HONK_HOVER_ENABLED_OFFSET", "HONK_TIME_SCALE_OFFSET",
-                       "HONK_SIZE_FACTOR_OFFSET", "HONK_BASE_SCALE_X_OFFSET"):
+                       "HONK_SIZE_FACTOR_OFFSET", "HONK_BASE_SCALE_X_OFFSET",
+                       "HONK_NPC_SIZE_FACTOR_OFFSET", "HONK_NPC_SCALE_TABLE_OFFSET"):
             self.assertIn(offset, HELPER)
         self.assertIn(".Lrestore_time_scale", HELPER)
         self.assertIn("UnityEngine.Time.set_timeScale", HELPER)
         self.assertIn("Transform.set_localScale", HELPER)
+        self.assertIn("Camera.WorldToScreenPoint(Vector3)", HELPER)
         self.assertIn("Rigidbody.set_velocity", HELPER)
 
     def test_camera_and_npc_shoo_hooks_use_pinned_mappings(self):
@@ -101,6 +123,7 @@ class HonkMenuPortTests(unittest.TestCase):
         self.assertIn("Goose.gooseCameraHelper", HELPER)
         self.assertIn("GooseCameraHelper.distance", HELPER)
         self.assertIn("Body.shooReadiness.timeAllowedToShooAgain", HELPER)
+        self.assertIn("Capture and scale each live Body", HELPER)
         self.assertIn("goose_reloc_shoo_continue", HELPER)
         self.assertIn("str     wzr, [x22, #HONK_SCALE_CAPTURED_OFFSET]", HELPER)
         self.assertIn("str     wzr, [x22, #HONK_CAMERA_CAPTURED_OFFSET]", HELPER)
